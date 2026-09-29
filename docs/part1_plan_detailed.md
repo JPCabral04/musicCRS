@@ -1,5 +1,7 @@
 # Part 1 Work Plan — Detailed Version (tied to the real code)
 
+> **Names and dates:** `part1_plan_simple.md` is the source of truth. There, **Worker 1 = Alejandro** and **Worker 2 = JP**, with these exceptions: JP does T0 (the harness) and `final_retriever.py`; Alejandro does the diversity analysis, the submission push and assembling the report. The dates also moved: harness on Wed Sep 30, the first recommenders on Oct 1–2, sync on Sat Oct 3. Always use the dates in the simple plan.
+
 This is the concrete version of `docs/part1_plan.md`. Same split (Worker 1 / Worker 2), same dates.
 The difference: every task now points to real files, functions, line numbers, data fields and commands.
 
