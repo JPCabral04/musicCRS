@@ -97,8 +97,8 @@ The difference: every task now points to real files, functions, line numbers, da
   - For `music` messages, `content` is the track ID of the gold track for that turn.
   - `thought` is the simulator's hidden reasoning. For the `music` message it names the gold track. **Never use it** (see Section 3).
 - Test users: 1,000 sessions from 500 users. 800 sessions are `test_warm` and 200 are `test_cold`. 371 of the 500 test users also appear in train. All train sessions are `train_warm`.
-- **The gold track is never a track that was already played earlier in the same session.** This was checked on all train and test turns: 0 repeats.
-- **Same-artist signal** (2,000 train sessions, turns 2–8):
+- **The gold track is never a track that was already played earlier in the same session.** This was checked on all train and test turns: 0 repeats. *Dataset pattern, see 6.3.*
+- **Same-artist signal** (2,000 train sessions, turns 2–8; *dataset pattern, see 6.3*):
   - 65% of gold tracks share an artist with a track played earlier in the session (61% with the *last* played track).
   - That "same-artist pool" is small: median 60 tracks, 90th percentile 162.
   - The gold artist's name appears in the current user message 27–41% of the time. The gold title appears only 1–3% of the time.
@@ -235,6 +235,13 @@ class TurnContext:
     baseline_query: str                   # exactly what _build_retrieval_input returns
 
 
+@dataclass(frozen=True)
+class SessionPolicy:
+    """Dataset-pattern rules (Section 6.3). Part 1: the defaults. Part 2: the agent sets them per turn."""
+    exclude_played: bool = True    # gold is never a played track (dataset pattern)
+    use_same_artist: bool = True   # 65% of golds share an artist with a played track
+
+
 def load_sessions(split: str, session_ids: list[str] | None = None) -> list[dict]:
     """Loads `train` or `test` sessions from the dialogue dataset, optionally only the given IDs (in that order)."""
 
@@ -247,9 +254,12 @@ def iter_turn_contexts(sessions: list[dict], catalog: MusicCatalogLoader) -> Ite
     """Yields the 8 TurnContexts of every session, in order."""
 
 
-def finalize_top_k(ranked: list[tuple[str, float]], played: tuple[str, ...], topk: int = 20) -> list[str]:
-    """Drops played tracks and duplicates, keeps order, returns at most `topk` IDs."""
+def finalize_top_k(ranked: list[tuple[str, float]], played: tuple[str, ...], topk: int = 20,
+                   exclude_played: bool = True) -> list[str]:
+    """Drops duplicates (and played tracks if `exclude_played`), keeps order, returns at most `topk` IDs."""
 ```
+
+- `TurnContext` is **what we know**; `SessionPolicy` is **how we use it**. They stay separate.
 
 ### 6.2 Scorer contract (every component)
 
@@ -257,12 +267,37 @@ def finalize_top_k(ranked: list[tuple[str, float]], played: tuple[str, ...], top
 class Scorer(Protocol):
     name: str
     def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
-        """Top-k (track_id, score), best first, unique IDs, played tracks already removed.
+        """Top-k (track_id, score), best first, unique IDs. Played tracks are NOT removed here
+        (that happens once, via SessionPolicy, see 6.3).
         May return fewer than k items, or an empty list (e.g. session scorers at turn 1)."""
 ```
 
 - Scores are only compared **within** one list. Fusion uses ranks, not raw scores.
 - `finalize_top_k` is the **only** place that cuts to 20. Keeping it in one place guarantees no duplicates and at most 20 IDs everywhere.
+- Scorers fetch a few extra candidates (k = 200 ≫ 20 + 7 played), so removing played tracks later never leaves the top-20 short.
+
+### 6.3 Session rules: dataset patterns, switchable for Part 2
+
+Two of our strongest ideas come from **patterns of this dataset**, not from how every real user behaves:
+
+| | Remove played tracks | Same-artist signal |
+| --- | --- | --- |
+| Kind of pattern | **Hard rule**: 0 exceptions (Section 2.1) | **Tendency**: 65% of golds |
+| Where it comes from | Probably how the data was generated (the system always plays something new) | A plausible real taste (people who hear an artist often want more of them) |
+| How it's used | Remove items (yes/no) | A separate list in fusion (a weight) |
+| How it fails in Part 2 | User says "play that again" | User says "something different", "another artist" |
+
+- **Part 1:** both are legitimate. We are scored on this dataset, and both use only information from before the target turn. We keep them on (the `SessionPolicy` defaults).
+- **Part 2:** the same code is reused by the chatbot, so both must be **switchable per turn**. The agent reads the user's intent (this can be its own LLM call, within the 5–10 per turn limit) and builds the policy:
+  - "play that again" → `SessionPolicy(exclude_played=False)`;
+  - "something different", "another artist" → `SessionPolicy(use_same_artist=False)`;
+  - anything else → the defaults.
+  - A request for a **named** track goes through the agent's track lookup (Part 2 R2), not through retrieval.
+- **One place only.** The policy is applied in exactly two spots, both reading the same flags:
+  1. `FusionScorer.score(ctx, k, policy)` (W2-2): drops played tracks from every component list **before** RRF (so they don't steal ranks), and uses weight 0 for `same_artist` when `use_same_artist=False`.
+  2. `finalize_top_k(..., exclude_played=policy.exclude_played)`: the final safety net.
+- **No scorer removes played tracks itself.** Otherwise the switch would have to be passed to every scorer, and forgetting one would silently break Part 2.
+- **Code status (Oct 1):** `BM25PlusRetriever.score_from_parts` (`bm25_plus.py`) and `SameArtistScorer.score` (`session_cf.py`) still remove played tracks internally. Remove that when the shared harness (T2) lands. Agree on it at the sync first (Worker 1's files).
 
 ---
 
@@ -387,10 +422,10 @@ class Scorer(Protocol):
           """Earlier user/assistant messages + played tracks' metadata (name, artist, album)."""
 
       def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
-          """w_current * scores(current_message) + w_history * scores(history); played tracks removed."""
+          """w_current * scores(current_message) + w_history * scores(history). Played tracks are kept (6.3)."""
   ```
 - **Steps (one change at a time, each logged with its val score).**
-  1. Baseline query + drop played tracks + refill to 20. This is safe, because the gold is **never** a played track (Section 2.1).
+  1. Baseline query + `finalize_top_k(exclude_played=True)` (drop played tracks, refill to 20). This is safe, because the gold is **never** a played track (Section 2.1). The removal happens in the shared `finalize_top_k`, not inside the scorer (6.3).
   2. Add `tag_list` to the index.
   3. Split the query into current message vs history, then tune `w_history` over {0, 0.1, 0.3, 0.5, 1.0} on val.
   4. (Optional) BM25 `k1`/`b` or a top-N tag cut. Only if the steps above are done.
@@ -445,7 +480,7 @@ class Scorer(Protocol):
           """L2-normalized float32 query vectors (uses the Qwen3 query prompt, see sanity check)."""
 
       def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
-          """Cosine = matrix @ query; played tracks removed; top k."""
+          """Cosine = matrix @ query; top k. Played tracks are kept (6.3)."""
 
   def sanity_check(n: int = 50, seed: int = 0) -> None:
       """Embeds n tracks' own metadata text and prints the rank of the track itself among 47,071."""
@@ -505,7 +540,7 @@ class Scorer(Protocol):
           """Builds artist_id -> track rows once."""
 
       def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
-          """Tracks sharing an artist_id with a played track (minus played). Ordered by recency of the matching
+          """Tracks sharing an artist_id with a played track (played ones kept, see 6.3). Ordered by recency of the matching
           played track, then BPR cosine to the played centroid, then popularity. Empty at turn 1."""
 
   class BPRSimilarityScorer:
@@ -518,7 +553,7 @@ class Scorer(Protocol):
           """Recency-weighted mean of the played tracks' BPR vectors (skips empty ones); None if none left."""
 
       def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
-          """Cosine(centroid, all tracks with a vector); played removed. Empty at turn 1."""
+          """Cosine(centroid, all tracks with a vector); played tracks kept (6.3). Empty at turn 1."""
   ```
 - **How to test.**
   ```bash
@@ -528,6 +563,7 @@ class Scorer(Protocol):
   Also print, per turn number, the fraction of turns where the gold is in the same-artist list. It should come out near 0.65 for turns 2–8 (a check that the code matches the statistic).
 - **Done when.** Both scorers are logged in `results/worker1.md`, with the per-turn "gold in pool" fraction for `same_artist`.
 - **Pitfalls.**
+  - The played tracks themselves share an artist (and are closest to the centroid), so they top the raw lists. That's expected: fusion and `finalize_top_k` drop them when `policy.exclude_played` is on (6.3). Don't filter them here.
   - Turn 1 has no played tracks, so both scorers return `[]`. Standalone runs will look bad on turn 1. That's expected, fusion fills it.
   - 616 tracks have no BPR vector. Skip them in the centroid, and give them no BPR score (they can still come from BM25/dense).
   - Use `artist_id`, not `artist_name` (names can collide or be spelled differently). Our 65% statistic used names, so re-measure it with IDs.
@@ -554,8 +590,9 @@ class Scorer(Protocol):
       def __init__(self, scorers: dict[str, Scorer], weights: dict[str, float], k_rrf: int = 60, depth: int = 200) -> None:
           """Holds the component scorers."""
 
-      def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
-          """Runs every scorer, then rrf(). Empty component lists are simply ignored."""
+      def score(self, ctx: TurnContext, k: int = 200, policy: SessionPolicy = SessionPolicy()) -> list[tuple[str, float]]:
+          """Runs every scorer, applies the policy (6.3), then rrf(). Empty component lists are simply ignored.
+          exclude_played: drop played tracks from every list before rrf. use_same_artist=False: weight 0 for same_artist."""
 
   def grid_search(cached: dict[str, list[list[tuple[str, float]]]], contexts: list[TurnContext],
                   ground_truth: list[dict], grid: dict[str, list[float]]) -> list[dict]:
@@ -590,8 +627,9 @@ class Scorer(Protocol):
       def __init__(self, cache_dir: str = "./cache") -> None:
           """Loads the catalog once and builds all component scorers + FusionScorer with the tuned weights."""
 
-      def retrieve(self, ctx: TurnContext, topk: int = 20) -> list[str]:
-          """Full pipeline for one turn (used by our runner and by the Part 2 chatbot)."""
+      def retrieve(self, ctx: TurnContext, topk: int = 20, policy: SessionPolicy = SessionPolicy()) -> list[str]:
+          """Full pipeline for one turn (used by our runner and by the Part 2 chatbot).
+          Part 1 always uses the default policy; the Part 2 agent passes its own (6.3)."""
 
       def text_to_item_retrieval(self, query: str, topk: int) -> list[str]:
           """Interface method: treats `query` as the current message, with no history or played tracks."""
@@ -691,7 +729,7 @@ git push -u origin worker1/bm25-plus        # then open a PR on GitHub; the othe
 | RRF | per turn | ms | low |
 
 - Everything must be loaded **once** at startup. Never call `load_dataset` or reload a model inside a request.
-- The LLM calls per turn in Part 2 (up to 5–10) also take time. Retrieval should stay well under 1 s.
+- The agent's LLM calls in Part 2 (up to 5–10 per turn) also take time. Retrieval should stay well under 1 s.
 - All numbers above are **A VERIFICAR**. Record real `ms/query` in every log line.
 
 ---
@@ -721,4 +759,5 @@ git push -u origin worker1/bm25-plus        # then open a PR on GitHub; the othe
 7. Whether grading requires predictions to come from `text_to_item_retrieval`, or whether our own runner with `retrieve(ctx)` is fine. Ask a TA. Plan B is in W1-3.
 8. Whether QuickFeed checks the ≤ 20 IDs rule. (The path is confirmed: `G1/predictions.json` + `G1/report.md`.) Our `check_predictions` enforces it anyway.
 9. Whether `conda activate` works in your Git Bash without running `conda init bash` first.
+10. **Part 2:** how the agent detects "play that again" / "something different" to set the `SessionPolicy` (its own LLM call vs keyword rules). See 6.3.
 10. **Hardware:** does either of us have an NVIDIA GPU? The plan assumes **CPU only**. With a GPU, embedding the ~16k val+test queries gets much faster, but Part 2 latency must still be measured on the machine that runs the chatbot.
