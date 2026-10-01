@@ -691,7 +691,7 @@ git push -u origin worker1/bm25-plus        # then open a PR on GitHub; the othe
 | RRF | per turn | ms | low |
 
 - Everything must be loaded **once** at startup. Never call `load_dataset` or reload a model inside a request.
-- The one LLM call per turn in Part 2 also takes time. Retrieval should stay well under 1 s.
+- The LLM calls per turn in Part 2 (up to 5–10) also take time. Retrieval should stay well under 1 s.
 - All numbers above are **A VERIFICAR**. Record real `ms/query` in every log line.
 
 ---

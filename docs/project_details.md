@@ -12,7 +12,7 @@ tags:
 ## Group formation
 
 - **Group size:** Each group must have 2 members. If you cannot form a group on your own, the lecturers will assign you to a group. Lecturer-assigned groups may have up to 3 members.
-- **Registration:** Everyone must fill out this form by **Wednesday Sep 23 (23:59)**.
+- **Registration:** Everyone must fill out the registration form by **Wednesday Sep 23 (23:59)**.
 - **Equal contribution:** All group members must contribute equally. If unequal contributions are suspected, points may be deducted from the member not contributing sufficiently. All presentations need to be done by both team members.
 - **Group changes:** Group changes are not allowed. For extraordinary circumstances (e.g., a member becomes unavailable), contact the lecturers immediately.
 
@@ -24,19 +24,19 @@ tags:
 - **Data, tools and languages:** The programming language is Python. You are required to build on top of the **DialogueKit** dialogue management toolkit and the **ChatWidget** web-based UI. A large language model, hosted at UiS, can be used through a shared API. A starting package based on these tools is made available. All teams are required to use the TalkPlay Challenge Dataset, which may be downloaded from HuggingFace. It's allowed to use other data sources and external APIs.
 - **AI use:** The use of AI-assistance is encouraged, however, students are responsible for the code and are expected to be able to answer questions about how it works.
 - **Human collaboration:** Copying from other teams and collaboration on the solutions between the groups is strictly prohibited, however you might consult high-level ideas and approaches.
-- **Deadlines:** Points may only be awarded for a set of requirements if it's submitted/presented by the deadline.
+- **Deadlines:** Points may only be awarded for a set of requirements if it's submitted/presented by the deadline. Extensions may only be given under exceptional circumstances (e.g., sickness certified by a doctor's notice), provided that a request is submitted **at least 3 days before the deadline**.
 
 ### In-person presentations
 
-- Use the booking system for scheduling your mandatory requirements demonstration and group presentations: *TO BE ADDED*.
-- Use the booking system for scheduling final presentations: *TO BE ADDED*.
+- Booking system for the mandatory requirements demonstration and group presentations: <https://calendly.com/galuscakova/20min?month=2026-10>
+- Booking system for the final presentations: *TO BE ADDED AFTER REQUIREMENTS PRESENTATIONS*.
 
 > [!warning] Booking rules
 > - To cancel the booked slot, you need to contact Petra directly.
 > - If you do not show up, you will receive **0 points** for the demonstration or presentation.
 > - You should have a good reason to cancel an already booked slot (e.g. medical, etc).
 > - Since the number of available slots each week is small, it is recommended to book the slots early.
-> - Do not book more than one slot.
+> - You are not allowed to book more than one slot.
 > - All group members are required to be there for the in-person demonstrations and presentations and be prepared to discuss their contributions in depth.
 
 ## Overview
@@ -46,7 +46,7 @@ tags:
 | 1 | Item ranking | Oct 7, 23:59 | QuickFeed | 10 |
 | 2 | Chat mandatory functionality | Oct 21 or Oct 28 | In person | 10 |
 | 3 | Group evaluation | Oct 28, 23:59 | Canvas | 10 |
-| 4 | Advanced functionality | Proposal: Oct 14 · Presentation: Nov 7 / Nov 14 | Canvas + In person | 20 |
+| 4 | Advanced functionality | Proposal: Oct 14 · Presentation: Nov 4 / Nov 11 | Canvas + In person | 20 |
 | | **Total** | | | **50** |
 
 ---
@@ -64,7 +64,7 @@ tags:
 
 ### Instructions
 
-In this part of the group project, you'll build the retrieval component of MusicCRS: given a conversation with the user, rank the ~47k-track catalog and return the tracks most likely to satisfy their current request. You're given a working BM25 baseline as a starting point — your goal is to build something that ranks better than it.
+In this part of the group project, you'll build the retrieval component of MusicCRS: given a conversation with the user, rank items from the catalog (~47k tracks) and return the tracks most likely to satisfy their current request. You're given a working BM25 baseline as a starting point — your goal is to build something that performs better than that.
 
 Full task specification, starter code, and evaluation instructions are available here.
 
@@ -112,25 +112,25 @@ where:
 | | |
 |---|---|
 | **Submission** | October 21 or October 28 |
-| **Delivery** | In person, sign up here (*TO BE ADDED*) |
+| **Delivery** | In person, sign up required (see booking link above) |
 | **Points** | 10 |
 
 **Task:** Build a web-based chat interface for MusicCRS that lets users manage a playlist and get recommendations using natural language.
 
 ### Instructions
 
-Users should be able to add, remove, view, and clear tracks in their playlist, and learn about the system's functionality — all via natural language. Only tracks that exist in the database may be added. Users should be able to refer to tracks and artists loosely (no exact string matching required, case/punctuation-insensitive), with ambiguities resolved intelligently. The system should also be able to recommend (a) additional songs for inclusion given a non-empty playlist (R6) and (b) create a playlist from scratch based on a natural language description (R8).
+Users should be able to add, remove, view, and clear tracks in their playlist, and learn about the system's functionality — all via natural language. Only tracks that exist in the database may be added. Users should be able to refer to tracks and artists loosely (i.e., beyond exact string, case/punctuation-insensitive), with ambiguities resolved intelligently. The system should be also able to recommend (a) additional songs for inclusion given a non-empty playlist (R6) and (b) create a playlist from scratch based on a natural language description (R8).
 
 > [!note]
-> All functionality needs to be implemented in a single solution (e.g. integrated in a single GitHub version). Points might be partial and will be awarded by considering quality of execution. **You are allowed only one attempt to present and earn points.**
+> All functionality needs to be implemented in a single solution (e.g. integrated in a single GitHub branch). Points might be partial and will be awarded by considering the quality of execution. **You are allowed only one attempt to present and earn points.**
 
 ### Requirements
 
 | ID | Requirement | Points |
 |---|---|---|
 | R1 | Set up a web-based chat environment. Users should be able to interact with the playlist (view, add and remove songs in the playlist and clean the playlist) using the chat but also directly from the UI. | 1 |
-| R2 | Provide functionality to 1) add and 2) remove songs from the playlist, 3) view the playlist, and 4) clear the playlist using natural language. TalkPlay Challenge Dataset should be integrated as a database. You might use any database of your choice (SQL or NoSQL). Only songs available in the database can be included in and added to the playlists. Each song can be added by either just its name or by its name and an artist. | 3 |
-| R3 | Add a way how the users can learn about the functionality of the system using natural language. | 1 |
+| R2 | Provide functionality to 1) add and 2) remove songs from the playlist, 3) view the playlist, and 4) clear the playlist using natural language. The TalkPlay Challenge Dataset should be integrated as a database. You might use any database of your choice (SQL or NoSQL). Only songs available in the database can be recommended and added to playlists. Each song can be added by either just its name or by its name and an artist. | 3 |
+| R3 | Add a way for users to learn about the functionality of the system using natural language. | 1 |
 | R4 | Offer a user-friendly way for the user to disambiguate options and choose the specific song they want (e.g., user asking to add the song "Love"). When offering alternatives for disambiguation, rank the suggestions intelligently (e.g., based on popularity or similarity to the existing playlist). | 1 |
 | R5 | Provide a possibility to ask questions about tracks and artists (support 4 types of question for either track or artist) using natural language. | 1 |
 | R6 | Provide a "recommend" functionality that suggests the user additional songs (between 3 and 5) based on their playlist (the suggestions need to be related somehow to the content of the playlist, cannot be just random or popular songs). | 1 |
@@ -158,11 +158,11 @@ Users should be able to add, remove, view, and clear tracks in their playlist, a
 | **Delivery** | Canvas |
 | **Points** | 10 |
 
-**Task:** Each group will evaluate the user interface and its functionality for 2 other groups. Evaluation will be done using a user interview and needs to be summarized in a questionnaire (*FORMAT TO BE PROVIDED*).
+**Task:** Each group will evaluate the user interface and its functionality for 2 other groups. Evaluation will be done using a user interview and needs to be summarized in a questionnaire (to be provided by the lecturer).
 
-- Each interview will need to take **at least 30 minutes**, needs to be **recorded**, **automatically transcribed**, and the transcription needs to be submitted.
-- The interview needs to be done **in person** and you will need to interact with the system of the other group.
-- You will be assigned the groups to interview, but you need to arrange the time when you will conduct the interview. You might use the labs for this.
+- Each interview is expected to take around **30 minutes**, needs to be **recorded**, **automatically transcribed**, and the transcription needs to be submitted.
+- The interview has to be conducted **in person**, where you interact with the system of the other group.
+- The pairing of groups for interviewing will be provided by the lecturer, but you need to arrange the time when you will conduct the interview by yourself. You might use the labs for this.
 
 ### Deliverables
 
@@ -177,11 +177,11 @@ Users should be able to add, remove, view, and clear tracks in their playlist, a
 |---|---|
 | **Proposal submission** | October 14, 23:59 (online) |
 | **Proposal delivery** | Canvas |
-| **Submission** | November 7 and November 14 |
-| **Delivery** | In person presentation, sign up here (*TO BE ADDED*) |
+| **Submission** | November 4 and November 11 |
+| **Delivery** | In person presentation, sign up required (see booking link above) |
 | **Points** | 20 (5p for idea approved + 15p for the implementation) |
 
-**Task:** Come up with a new feature or features that improves the usability or performance of the system for real users by leveraging some techniques/ideas from this course. Each group needs to write a proposal for advanced requirements which it will implement, including a list of grading rubrics.
+**Task:** Come up with new features that improve the usability or performance of the system for real users by leveraging some techniques/ideas from this course. Each group needs to write a proposal for advanced requirements which will be implemented, including a list of grading rubrics.
 
 The proposal will need to be first submitted using Canvas for approval. Feel free to use the lab sessions to get feedback on ideas from the lecturer. Once the proposal and grading is approved by the lecturer, the team's task is to implement this functionality. Points might be partial and will be awarded by considering both difficulty and execution of the approved ideas.
 
@@ -190,7 +190,5 @@ The proposal will need to be first submitted using Canvas for approval. Feel fre
 ## General requirements
 
 > [!important]
-> - Responses need to be generated within a few (**3–5 seconds**)
-> - There is a **single LLM call allowed per turn**
-
-*We reserve the right to make adjustments to the document and grading rules.*
+> - Responses need to be generated within a few (**3–5**) seconds
+> - The number of LLM calls allowed per turn should be limited to **5–10**
