@@ -68,6 +68,7 @@ Only 3 files matter:
 
 - **65% of the time** (turns 2–8), the correct song is **by an artist who was already played** in this conversation. That's usually only ~60 candidate songs. This is our biggest opportunity.
 - The correct song is **never** a song already played.
+- These two facts are **patterns of this dataset**, not rules about real users (see Section 4b).
 - The dataset also gives **embeddings** (lists of numbers that represent each song's meaning) made with a model called **Qwen3**. With them we can match "chill rainy-day music" to songs even when no words match.
 - It also gives **BPR vectors**: songs that the same people listen to get similar vectors ("people who like X also like Y").
 
@@ -79,13 +80,23 @@ We build **4 simple "recommenders"**. Each one gives a ranked list of songs for 
 
 | # | Recommender | Idea | Owner |
 | --- | --- | --- | --- |
-| 1 | **Better BM25** | Keyword search, but: add tags, count the current message more, remove played songs | Alejandro |
+| 1 | **Better BM25** | Keyword search, but: add tags, count the current message more | Alejandro |
 | 2 | **Same artist** | Songs by artists already played in this conversation | Alejandro |
 | 3 | **Dense (Qwen3)** | Search by meaning using the song embeddings | JP |
 | 4 | **BPR similar** | Songs similar to the ones already played | Alejandro |
 | → | **Merge (RRF)** | A song high in several lists goes to the top | JP |
 
 **RRF (Reciprocal Rank Fusion)** = for each song, add `weight / (60 + its rank)` over all lists. Simple, and easy to explain.
+
+---
+
+## 4b. Two dataset tricks we can switch off
+
+- **Trick 1: remove songs already played.** In this dataset the correct song is never one already played, so those slots are always wasted.
+- **Trick 2: same artist.** In this dataset the correct song is often by an artist already played.
+- In Part 1 both are fine: we are scored on this dataset, and both use only what happened before the current turn.
+- In Part 2 a real user may say "play that again" (trick 1 must be off) or "something different" (trick 2 must be off).
+- So both are **switches**, set in **one shared place** (the merge step and the final top-20 cut), never inside a single recommender. Part 1 keeps them on. In Part 2 the chatbot turns them off when the user asks.
 
 ---
 
@@ -124,7 +135,7 @@ JP opens a pull request. **Alejandro** reviews it and runs the baseline command 
 ### Thu Oct 1 – Fri Oct 2
 
 **Alejandro — T4. Better BM25.** Do one change at a time and write down the score after each:
-1. remove already-played songs from the list;
+1. measure the gain of removing already-played songs (the removal itself is done by the shared final step, not inside BM25, see Section 4b);
 2. add `tag_list` to the search index;
 3. score the current message and the old history separately, and give the current message more weight.
 
