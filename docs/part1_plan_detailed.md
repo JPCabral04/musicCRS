@@ -78,7 +78,7 @@ The difference: every task now points to real files, functions, line numbers, da
 | **Catalog diversity** | Number of different tracks we recommend across all turns, divided by 47,071. |
 | **RRF (Reciprocal Rank Fusion)** | Merges several ranked lists: each track gets Σ weight / (60 + rank) over the lists it appears in. It uses only ranks, so the lists' score scales don't matter. |
 | **BPR** | Bayesian Personalized Ranking. A collaborative filtering method trained on listening data. Tracks that are played by the same people get similar 128-d vectors. |
-| **Validation set** | A fixed sample of *train* sessions that we use to compare and tune methods. The *test* split is only used at milestones, so we never tune on it. |
+| **Validation set** | Fixed samples of *train* sessions that we use to compare and tune methods: three disjoint folds of 1,000 sessions (`val0` default, `val0–2` to confirm). The *test* split is only used at milestones, so we never tune on it. |
 | **Leakage** | Using information that won't exist at prediction time (for example the gold track itself). It gives fake high scores and breaks the rules. |
 
 ---
@@ -155,7 +155,7 @@ The difference: every task now points to real files, functions, line numbers, da
 | ✅ | Current user message, earlier user/assistant messages | This is the conversation. The baseline uses it too. |
 | ✅ | Track IDs of earlier `music` messages ("played tracks") | The baseline uses them (`run_bm25_baseline.py` L46-48). In Part 2 we know what we played. |
 | ✅ | Catalog metadata, `all_tracks` embeddings | Explicitly allowed (`retrieval/README.md` L38-44). |
-| ✅ | `train` sessions for validation, statistics, tuning | Allowed (`make_ground_truth.py` L8-9 says train is for dev-tuning). |
+| ✅ | `train` sessions for validation, statistics, tuning | Allowed (`make_ground_truth.py` L8-9 says train is for dev-tuning). Evaluate only on the val folds; compute statistics only on the free pool (T0.1). |
 | ❌ | `thought` fields | Hidden simulator reasoning. The `music` thought names the gold track. It does not exist in Part 2. |
 | ❌ | `music` / `assistant` messages **of the target turn** | They contain the gold track and its name. The baseline correctly stops before them (L41-44). |
 | ❌ | `goal_progress_assessments` | Judged after the turn, so it's future information. |
@@ -191,7 +191,7 @@ python -c "import retrieval; print('ok')"
 
 | Area | Owner | Files |
 | --- | --- | --- |
-| Shared harness | **Both** (pair session) | `retrieval/context.py`, `retrieval/run_experiment.py`, `data/val_session_ids.json` |
+| Shared harness | **Both** (pair session) | `retrieval/context.py`, `retrieval/run_experiment.py`, `data/val_folds.json` |
 | Improved BM25 | **Worker 1** | `retrieval/bm25_plus.py` |
 | Session signal (same artist + BPR) | **Worker 1** | `retrieval/session_cf.py` |
 | Dense retrieval (Qwen3) | **Worker 2** | `retrieval/dense.py` |
@@ -305,27 +305,39 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 
 ### T0 — Shared harness (pair session, Mon Sep 28) — **Both**
 
-#### T0.1 Validation set → `data/val_session_ids.json`
+#### T0.1 Validation folds → `data/val_folds.json`
 
-- **Objective.** Pick one fixed set of train sessions. Both of us tune on it, so our numbers are comparable and we never tune on test.
-- **Why, in plain words.** The course only gives `train` and `test`. "Validation" is not a new split. It's just 1,000 `train` sessions that we set aside to compare our variants. If we tried 20 variants on `test` and kept the best, we would be fitting to the test set, which the README forbids. None of our methods learn from `train` (BM25, the embeddings and BPR come ready-made), so measuring on train sessions is safe. `test` is used only twice, at the milestones.
-- **Decision: 1,000 sessions, seed 42** (not 300). Catalog diversity depends on how many turns are scored: 1,000 sessions × 8 turns × 20 = 160k slots, the same as test. With 300 sessions the diversity (and so the final score) would not be comparable to test.
-- For fast iteration, use `--limit 200` (the first 200 val sessions). With `--limit`, only compare nDCG, not diversity.
+- **Objective.** Fix three disjoint sets of train sessions. Both of us tune on them, so our numbers are comparable and we never tune on test.
+- **Why, in plain words.** The course only gives `train` and `test`. "Validation" is not a new split. It's just `train` sessions that we set aside to compare our variants. If we tried 20 variants on `test` and kept the best, we would be fitting to the test set, which the README forbids. None of our methods learn from `train` (BM25, the embeddings and BPR come ready-made), so measuring on train sessions is safe. `test` is used only twice, at the milestones.
+- **Why exactly 1,000 sessions per fold (not 300, not all of train).** Catalog diversity is `unique recommended tracks / 47,071` (`evaluation/diversity.py`), and it is **not normalized by the number of turns**. Test = 1,000 sessions × 8 turns × 20 = 160k slots. A fold of the same size gives a diversity (and so a `final_score`) comparable to test. With 300 sessions diversity would be too low; with all 15,199 train sessions (2.4M slots) almost any method covers most of the catalog, and the fusion grid would tune for the wrong trade-off. nDCG@20 is a mean, so it is fine at any size.
+- **Why three folds.** One fold gives ~8,000 turns, so a gain below ~0.003–0.005 final can be noise. Three independent folds show the noise directly (the spread between them), with no statistics library.
+- **Decision (seed 42):**
+
+  | Part | Size | Use |
+  | --- | --- | --- |
+  | `val0` | 1,000 sessions | **Default** for every experiment (`--split val`). |
+  | `val1`, `val2` | 1,000 each, disjoint | **Confirmation** of important decisions only: final fusion weights, keep/drop a component, any gain < ~0.005 final (`--split val_all`). |
+  | free pool (~12,199) | the rest of train | Statistics (like the 65% same-artist number) and anything ever *learned* from train (popularity priors, co-occurrence). **Never evaluate on it.** |
+
+- For fast iteration, use `--limit 200` (the first 200 sessions of `val0`). With `--limit`, only compare nDCG, not diversity.
 - **Existing code to reuse.** `datasets.load_dataset(..., split="train")` as in `make_ground_truth.py` L42.
-- **New code.** A `make_val_set` function inside `run_experiment.py` (no extra file):
+- **New code.** A `make_val_folds` function inside `run_experiment.py` (no extra file):
   ```python
-  def make_val_set(n: int = 1000, seed: int = 42, output: str = "data/val_session_ids.json") -> list[str]:
-      """Samples n train session IDs: sorts all IDs first, then random.Random(seed).sample. Writes a JSON list."""
+  def make_val_folds(n: int = 1000, n_folds: int = 3, seed: int = 42,
+                     output: str = "data/val_folds.json") -> dict[str, list[str]]:
+      """Sorts all train session IDs, draws n * n_folds with random.Random(seed).sample, cuts them into
+      {"val0": [...], "val1": [...], "val2": [...]}. Writes JSON. The free pool = every other train ID."""
   ```
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --make_val_set --n_val 1000 --seed 42
-  python -c "import json; ids=json.load(open('data/val_session_ids.json')); print(len(ids), len(set(ids)), ids[:2])"
+  python -m retrieval.run_experiment --make_val_folds --n_val 1000 --n_folds 3 --seed 42
+  python -c "import json; f=json.load(open('data/val_folds.json')); ids=[i for v in f.values() for i in v]; print({k: len(v) for k, v in f.items()}, len(ids) == len(set(ids)), f['val0'][:2])"
   ```
-- **Done when.** The file has 1,000 unique IDs, it is committed, and both of us get the same first two IDs when we run it.
+- **Done when.** The file has 3 × 1,000 unique IDs with no overlap, it is committed, and both of us get the same first two IDs of `val0` when we run it.
 - **Pitfalls.**
   - Sort the IDs before sampling. Otherwise the result depends on dataset order.
-  - If we ever compute statistics from train (for example popularity), **exclude the val sessions**, or val scores will be too optimistic.
+  - If we ever compute statistics from train (for example popularity), use **only the free pool**, or val scores will be too optimistic.
+  - Dense is slow on CPU: run it on `val0`, and on `val_all` only for the final check.
 
 #### T0.2 `retrieval/context.py`
 
@@ -365,7 +377,8 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   METHODS: dict[str, Callable[[], Scorer]]   # "bm25_baseline", "bm25_plus", "dense", "same_artist", "bpr_sim", "fusion", "final"
 
   def run(method: str, split: str, limit: int | None = None, topk: int = 20) -> tuple[list[dict], list[list[tuple[str, float]]]]:
-      """split is "val" (train sessions from data/val_session_ids.json) or "test".
+      """split is "val" (= val0), "val1", "val2" (train sessions from data/val_folds.json) or "test".
+      ("val_all" is handled in main(): it calls run() once per fold.)
       Returns the predictions (challenge format) and the raw top-200 lists (saved for fusion tuning)."""
 
   def ground_truth_for(split: str, session_ids: set[str]) -> list[dict]:
@@ -375,17 +388,20 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
       """Asserts: one entry per (session, turn); 1..20 IDs; no duplicates; all IDs in the catalog; no played track."""
 
   def main() -> None:
-      """CLI: --method --split {val,test} --limit --make_val_set --n_val --seed. Prints the evaluate() dict,
-      ms/query, and writes cache/runs/<method>_<split>.json and cache/runs/<method>_<split>_top200.pkl."""
+      """CLI: --method --split {val,val1,val2,val_all,test} --limit --make_val_folds --n_val --n_folds --seed.
+      Prints the evaluate() dict, ms/query, and writes cache/runs/<method>_<split>.json and
+      cache/runs/<method>_<split>_top200.pkl. With val_all: one evaluate() per fold, then the mean and
+      the spread (max - min) of nDCG@20, diversity and final."""
   ```
 - **How to test.**
   ```bash
   python -m retrieval.run_experiment --method bm25_baseline --split test          # ~ same minutes as the baseline
   python -m retrieval.run_experiment --method bm25_baseline --split val           # record this as "baseline on val"
   python -m retrieval.run_experiment --method bm25_baseline --split val --limit 200
+  python -m retrieval.run_experiment --method bm25_baseline --split val_all       # record the spread = our noise level
   ```
   Look at `ndcg@20`, `catalog_diversity`, `final_score` and `ms/query`.
-- **Done when.** `--split test` prints nDCG@20 = 0.0830, diversity = 0.3908, final = 0.1446 (the numbers you already got). The val numbers are written at the top of both `results/worker*.md`.
+- **Done when.** `--split test` prints nDCG@20 = 0.0830, diversity = 0.3908, final = 0.1446 (the numbers you already got). The val and val_all numbers (with the spread) are written at the top of both `results/worker*.md`. Sanity check: each fold's diversity should be close to test's 0.39, since the folds have the same size.
 - **Pitfalls.**
   - `evaluate()` iterates over the **ground truth** and does `preds_by_key[key]` (L45). If the GT has turns we didn't predict, you get a `KeyError`. So always filter the GT to the evaluated sessions (`ground_truth_for`).
   - `evaluate()` counts **every** predicted ID for diversity (L52), not just the first 20. A list of 100 would inflate diversity. `check_predictions` must enforce ≤ 20.
@@ -607,7 +623,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   python -c "from retrieval.fusion import main_grid; main_grid()"       # prints the top 10 weight sets
   python -m retrieval.run_experiment --method fusion --split val
   ```
-- **Done when.** The best weights and their val final score are logged. The fused val score beats the best single component. The chosen weights are stored as constants in `fusion.py`.
+- **Done when.** The best weights and their val final score are logged. The fused val score beats the best single component, **confirmed on `val_all`** (the gain is larger than the spread between folds). The chosen weights are stored as constants in `fusion.py`.
 - **Pitfalls.**
   - Tune on **val only**, never on test.
   - Use a coarse grid (for example weights in {0, 0.5, 1, 2}): 4 components → 256 combos, each run in pure Python on the cached lists. That's fast. Don't re-run dense per combo.
@@ -709,7 +725,7 @@ git push -u origin worker1/bm25-plus        # then open a PR on GitHub; the othe
 ```
 
 - **`docs/` is ignored on purpose** (`.gitignore`). The plans are **not** in the repo. Share `docs/part1_plan.md` and this file outside Git, and re-send them when they change. Don't put anything the code needs in `docs/`.
-- `cache/`, `predictions*.json`, `ground_truth*.json`, `results*.json`, `.env` are ignored. `data/` and `results/*.md` are **not** ignored, which is what we want: commit `data/val_session_ids.json` and the logs.
+- `cache/`, `predictions*.json`, `ground_truth*.json`, `results*.json`, `.env` are ignored. `data/` and `results/*.md` are **not** ignored, which is what we want: commit `data/val_folds.json` and the logs.
 - If the group repo uses this same `.gitignore`, `G1/predictions.json` will be ignored. Add it with `git add -f G1/predictions.json`.
 - Never commit anything from `cache/` (the embedding `.npy` files are hundreds of MB).
 
