@@ -395,13 +395,14 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   ```
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --method bm25_baseline --split test          # ~ same minutes as the baseline
+  python -m retrieval.run_experiment --method bm25_baseline --split test --keep_played   # the starter kit keeps played tracks
   python -m retrieval.run_experiment --method bm25_baseline --split val           # record this as "baseline on val"
   python -m retrieval.run_experiment --method bm25_baseline --split val --limit 200
   python -m retrieval.run_experiment --method bm25_baseline --split val_all       # record the spread = our noise level
   ```
   Look at `ndcg@20`, `catalog_diversity`, `final_score` and `ms/query`.
-- **Done when.** `--split test` prints nDCG@20 = 0.0830, diversity = 0.3908, final = 0.1446 (the numbers you already got). The val and val_all numbers (with the spread) are written at the top of both `results/worker*.md`. Sanity check: each fold's diversity should be close to test's 0.39, since the folds have the same size.
+- **As built (Oct 2).** The `Scorer` protocol lives in `context.py`. `run()` takes a built scorer (so `val_all` builds it once). Played tracks are removed by default; `--keep_played` turns that off. Results: test 0.1446 (`--keep_played`) / 0.1664 (default); val_all final mean 0.2072, spread 0.0101.
+- **Done when.** `--split test --keep_played` prints nDCG@20 = 0.0830, diversity = 0.3908, final = 0.1446 (the numbers you already got). The val and val_all numbers (with the spread) are written at the top of both `results/worker*.md`. Sanity check: each fold's diversity should be close to test's 0.39, since the folds have the same size.
 - **Pitfalls.**
   - `evaluate()` iterates over the **ground truth** and does `preds_by_key[key]` (L45). If the GT has turns we didn't predict, you get a `KeyError`. So always filter the GT to the evaluated sessions (`ground_truth_for`).
   - `evaluate()` counts **every** predicted ID for diversity (L52), not just the first 20. A list of 100 would inflate diversity. `check_predictions` must enforce ≤ 20.
