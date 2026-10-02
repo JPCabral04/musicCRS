@@ -1,0 +1,126 @@
+"""Shared experiment harness: per-turn context builder (T2).
+
+Turns a raw session into one `TurnContext` per turn: everything a scorer may
+know when predicting that turn. The cut-off is the baseline's own rule
+(`_build_retrieval_input`): stop before the target turn's `music` message,
+which is the gold track. Every scorer reads the same `TurnContext`, so the
+leak-safe boundary lives in one place. It has no dataset-only fields, so the
+Part 2 agent can build one from a live conversation.
+
+Usage (self-check on the first sessions of a split):
+    python -m retrieval.context --split test --n_sessions 3
+    python -m retrieval.context --split train --n_sessions 3
+"""
+import argparse
+from collections.abc import Iterator
+from dataclasses import dataclass
+
+from datasets import load_dataset
+
+from .analysis.same_artist_stats import _played_tracks_by_turn
+from .bm25 import DEFAULT_CORPUS_TYPES
+from .data_loader import MusicCatalogLoader
+from .evaluation.make_ground_truth import DEFAULT_DATASET_NAME
+from .run_bm25_baseline import NUM_TURNS, _build_retrieval_input
+
+
+@dataclass(frozen=True)
+class TurnContext:
+    """Everything a scorer may know when predicting one turn.
+
+    Built only from messages before the target turn's music/assistant messages.
+    Tuples (not lists), so no scorer can change the context it shares with the others.
+    """
+    session_id: str
+    turn_number: int                      # 1..8
+    current_message: str                  # this turn's user message
+    history: tuple[tuple[str, str], ...]  # earlier (role, content); roles "user"/"music"/"assistant"
+    played_track_ids: tuple[str, ...]     # earlier `music` contents (track IDs), oldest first
+    baseline_query: str                   # exactly what _build_retrieval_input returns
+
+
+def load_sessions(split: str, session_ids: list[str] | None = None) -> list[dict]:
+    """Loads `train` or `test` sessions, optionally only the given IDs (in that order)."""
+    dataset = load_dataset(DEFAULT_DATASET_NAME, split=split)
+    if session_ids is None:
+        return list(dataset)
+    by_id = {session["session_id"]: session for session in dataset}
+    missing = [sid for sid in session_ids if sid not in by_id]
+    if missing:
+        raise KeyError(f"{len(missing)} session IDs not in {split}, e.g. {missing[:3]}")
+    return [by_id[sid] for sid in session_ids]
+
+
+def build_turn_context(session: dict, turn_number: int,
+                       catalog: MusicCatalogLoader) -> TurnContext:
+    """Builds the TurnContext for one (session, turn)."""
+    conversations = session["conversations"]
+    history, played, current_message = [], [], None
+    for message in conversations:
+        # Same cut-off as _build_retrieval_input: nothing after this turn's user message.
+        if message["turn_number"] > turn_number:
+            break
+        if message["turn_number"] == turn_number and message["role"] != "user":
+            break
+        role, content = message["role"], message["content"]
+        if message["turn_number"] == turn_number:
+            current_message = content
+            continue
+        history.append((role, content))
+        if role == "music":
+            played.append(content)
+    if current_message is None:
+        raise ValueError(f"no user message for turn {turn_number} in {session['session_id']}")
+    return TurnContext(
+        session_id=session["session_id"],
+        turn_number=turn_number,
+        current_message=current_message,
+        history=tuple(history),
+        played_track_ids=tuple(played),
+        baseline_query=_build_retrieval_input(
+            conversations, turn_number, catalog, DEFAULT_CORPUS_TYPES),
+    )
+
+
+def iter_turn_contexts(sessions: list[dict],
+                       catalog: MusicCatalogLoader) -> Iterator[TurnContext]:
+    """Yields the 8 TurnContexts of every session, in order."""
+    for session in sessions:
+        for turn_number in range(1, NUM_TURNS + 1):
+            yield build_turn_context(session, turn_number, catalog)
+
+
+def _check_session(session: dict, catalog: MusicCatalogLoader) -> None:
+    """Asserts the leak-safe boundary on every turn of one session."""
+    all_played = _played_tracks_by_turn(session)  # independent implementation
+    for ctx in iter_turn_contexts([session], catalog):
+        t = ctx.turn_number
+        gold = session["conversations"][3 * (t - 1) + 1]["content"]  # read here only
+        assert len(ctx.history) == 3 * (t - 1), (t, len(ctx.history))
+        assert len(ctx.played_track_ids) == t - 1, (t, ctx.played_track_ids)
+        assert list(ctx.played_track_ids) == all_played[:t - 1], t
+        assert gold not in ctx.played_track_ids, (t, gold)
+        assert ctx.baseline_query.endswith(f"user: {ctx.current_message}"), t
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Self-check of the context builder")
+    parser.add_argument("--split", default="test")
+    parser.add_argument("--n_sessions", type=int, default=3)
+    args = parser.parse_args()
+
+    catalog = MusicCatalogLoader()
+    sessions = load_sessions(args.split)[:args.n_sessions]
+    for session in sessions:
+        _check_session(session, catalog)
+
+    for t in (1, 2, NUM_TURNS):
+        ctx = build_turn_context(sessions[0], t, catalog)
+        print(f"turn {t}: {len(ctx.history)} history messages, "
+              f"played = {ctx.played_track_ids}, "
+              f"current = {ctx.current_message[:60]!r}")
+    print(f"[{args.split}] all checks passed on {len(sessions)} sessions")
+
+
+if __name__ == "__main__":
+    main()
