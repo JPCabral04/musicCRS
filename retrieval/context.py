@@ -34,9 +34,23 @@ class TurnContext:
     session_id: str
     turn_number: int                      # 1..8
     current_message: str                  # this turn's user message
-    history: tuple[tuple[str, str], ...]  # earlier (role, content); roles "user"/"music"/"assistant"
-    played_track_ids: tuple[str, ...]     # earlier `music` contents (track IDs), oldest first
+    # earlier (role, content); roles "user"/"music"/"assistant"
+    history: tuple[tuple[str, str], ...]
+    # earlier `music` contents (track IDs), oldest first
+    played_track_ids: tuple[str, ...]
     baseline_query: str                   # exactly what _build_retrieval_input returns
+
+
+@dataclass(frozen=True)
+class SessionPolicy:
+    """Dataset-pattern rules, kept apart from the facts in TurnContext.
+
+    Part 1 uses the defaults. In Part 2 the agent sets them per turn from the
+    user's intent ("play that again" -> exclude_played=False, "something
+    different" -> use_same_artist=False). Applied only in fusion and finalize_top_k.
+    """
+    exclude_played: bool = True   # gold is never a played track (dataset pattern)
+    use_same_artist: bool = True  # 65% of golds share an artist with a played track
 
 
 def load_sessions(split: str, session_ids: list[str] | None = None) -> list[dict]:
@@ -47,7 +61,8 @@ def load_sessions(split: str, session_ids: list[str] | None = None) -> list[dict
     by_id = {session["session_id"]: session for session in dataset}
     missing = [sid for sid in session_ids if sid not in by_id]
     if missing:
-        raise KeyError(f"{len(missing)} session IDs not in {split}, e.g. {missing[:3]}")
+        raise KeyError(
+            f"{len(missing)} session IDs not in {split}, e.g. {missing[:3]}")
     return [by_id[sid] for sid in session_ids]
 
 
@@ -70,7 +85,8 @@ def build_turn_context(session: dict, turn_number: int,
         if role == "music":
             played.append(content)
     if current_message is None:
-        raise ValueError(f"no user message for turn {turn_number} in {session['session_id']}")
+        raise ValueError(
+            f"no user message for turn {turn_number} in {session['session_id']}")
     return TurnContext(
         session_id=session["session_id"],
         turn_number=turn_number,
@@ -90,12 +106,42 @@ def iter_turn_contexts(sessions: list[dict],
             yield build_turn_context(session, turn_number, catalog)
 
 
+def finalize_top_k(ranked: list[tuple[str, float]], played: tuple[str, ...],
+                   topk: int = 20, exclude_played: bool = True) -> list[str]:
+    """Drops duplicates (and played tracks if `exclude_played`), keeps order, returns at most `topk` IDs.
+
+    The only place that cuts a ranking to the final top-k.
+    """
+    skip = set(played) if exclude_played else set()
+    result = []
+    for track_id, _ in ranked:
+        if track_id in skip:
+            continue
+        skip.add(track_id)  # later duplicates are skipped too
+        result.append(track_id)
+        if len(result) == topk:
+            break
+    return result
+
+
+def _check_finalize() -> None:
+    """Asserts finalize_top_k on a toy ranking: duplicates, played tracks and the cut."""
+    ranked = [("a", 5.0), ("p", 4.0), ("b", 3.0), ("a", 2.0), ("c", 1.0)]
+    assert finalize_top_k(ranked, ("p",), topk=20) == ["a", "b", "c"]
+    assert finalize_top_k(ranked, ("p",), topk=2) == ["a", "b"]
+    assert finalize_top_k(ranked, ("p",), topk=20, exclude_played=False) == [
+        "a", "p", "b", "c"]
+    assert finalize_top_k([], ("p",)) == []
+
+
 def _check_session(session: dict, catalog: MusicCatalogLoader) -> None:
     """Asserts the leak-safe boundary on every turn of one session."""
     all_played = _played_tracks_by_turn(session)  # independent implementation
     for ctx in iter_turn_contexts([session], catalog):
         t = ctx.turn_number
-        gold = session["conversations"][3 * (t - 1) + 1]["content"]  # read here only
+        gold = session["conversations"][3 *
+                                        # read here only
+                                        (t - 1) + 1]["content"]
         assert len(ctx.history) == 3 * (t - 1), (t, len(ctx.history))
         assert len(ctx.played_track_ids) == t - 1, (t, ctx.played_track_ids)
         assert list(ctx.played_track_ids) == all_played[:t - 1], t
@@ -104,11 +150,13 @@ def _check_session(session: dict, catalog: MusicCatalogLoader) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Self-check of the context builder")
+    parser = argparse.ArgumentParser(
+        description="Self-check of the context builder")
     parser.add_argument("--split", default="test")
     parser.add_argument("--n_sessions", type=int, default=3)
     args = parser.parse_args()
 
+    _check_finalize()
     catalog = MusicCatalogLoader()
     sessions = load_sessions(args.split)[:args.n_sessions]
     for session in sessions:
