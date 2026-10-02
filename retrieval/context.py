@@ -14,6 +14,7 @@ Usage (self-check on the first sessions of a split):
 import argparse
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Protocol
 
 from datasets import load_dataset
 
@@ -51,6 +52,20 @@ class SessionPolicy:
     """
     exclude_played: bool = True   # gold is never a played track (dataset pattern)
     use_same_artist: bool = True  # 65% of golds share an artist with a played track
+
+
+class Scorer(Protocol):
+    """Contract every retrieval component follows, so fusion and the runner can swap them."""
+    name: str
+
+    def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
+        """Top-k (track_id, score), best first, unique IDs.
+
+        Played tracks are NOT removed here (SessionPolicy does that once, in
+        fusion and finalize_top_k). May return fewer than k items, or none
+        (e.g. a session scorer at turn 1).
+        """
+        ...
 
 
 def load_sessions(split: str, session_ids: list[str] | None = None) -> list[dict]:
