@@ -40,3 +40,6 @@ yarn-error.log*
 # Claude Code (local)
 CLAUDE.MD
 .claude/settings.local.json
+
+# Private study/defense notes (local only)
+STUDY.md

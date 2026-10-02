@@ -102,7 +102,7 @@ We build **4 simple "recommenders"**. Each one gives a ranked list of songs for 
 
 ## 5. Three rules
 
-1. **Never tune on the test set.** We compare our ideas on 1,000 conversations taken from `train` (our "validation set"). We only look at the test score twice: Oct 3 and Oct 5.
+1. **Never tune on the test set.** We compare our ideas on **three groups of 1,000 conversations** taken from `train` (our "validation set"). We use the first group for everything, and all three to confirm the final choices. Each group has the same size as test, because the diversity score depends on size. We only look at the test score twice: Oct 3 and Oct 5.
 2. **Never use hidden information:** the `thought` fields, `goal_progress_assessments`, the embedding split `test_tracks` (it contains the test answers!), or anything from the current turn after the user message.
 3. **No LLM calls.** And keep everything fast: the same code must answer in under 3–5 s in the Part 2 chatbot.
 
@@ -119,8 +119,8 @@ Each task: **what** → **file** → **done when**.
 
 ### Wed Sep 30
 
-**JP — T1. Validation set.** Pick 1,000 random `train` conversations (fixed seed 42) and save their IDs.
-→ `data/val_session_ids.json` → done when running it twice gives the same file.
+**JP — T1. Validation set.** Pick 3 × 1,000 random `train` conversations (fixed seed 42, no overlap) and save their IDs. The rest of `train` is free for statistics, never for scoring.
+→ `data/val_folds.json` → done when running it twice gives the same file.
 
 **JP — T2. Context builder.** For each turn, extract 4 things: the current message, the earlier messages, the songs already played, and the baseline query text.
 → `retrieval/context.py` → done when turn 1 has 0 played songs and turn 8 has 7.
@@ -209,6 +209,7 @@ Run something (after T3 exists):
 ```bash
 python -m retrieval.run_experiment --method bm25_plus --split val --limit 200   # quick check (only compare nDCG)
 python -m retrieval.run_experiment --method bm25_plus --split val               # the number you write in your log
+python -m retrieval.run_experiment --method fusion --split val_all              # confirm a final choice on all 3 groups
 ```
 
 The final test check (T9):
