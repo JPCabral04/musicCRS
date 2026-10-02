@@ -9,15 +9,17 @@ Deadline: **Wed Oct 7, 23:59**. For details (line numbers, function signatures),
 | | **JP** | **Alejandro** |
 | --- | --- | --- |
 | Shared base | T1–T3: validation set, context builder, experiment runner (Wed Sep 30) | Reviews and runs the T1–T3 pull request |
-| Recommenders | T6 **Dense (Qwen3)** — search by meaning | T4 **Better BM25** — keyword search, improved |
+| Recommenders | Adapted T4/T5 to the harness (`fix/ale` PR) | T4 **Better BM25** — keyword search, improved |
 | | | T5 **Same artist** — songs by artists already played |
+| | | T6 **Dense (Qwen3)** — search by meaning |
 | | | T7 **BPR similar** — songs similar to the ones already played |
 | Combine | T8 **Merge (RRF)** — combine all lists, tune weights | T10 **Diversity check** |
 | Final | T9 **Final retriever** + the run on test | T11 **Submission push** to the group repo + assemble the report |
-| Report | Sections: harness, dense, fusion, final | Sections: BM25+, same artist, BPR, diversity |
+| Report | Sections: harness, fusion, final | Sections: BM25+, same artist, dense, BPR, diversity |
 
-- **JP** has the more complex part: the neural model, the fusion, and the final class.
-- **Alejandro** has the parts that are simpler to code, but T5 (same artist) is probably **the biggest score gain** of all (see Section 3).
+- **Role swap (Fri Oct 2):** T6 Dense moved from JP to Alejandro. T6 and T7 share the same embedding loader, so one person owning both removes the wait between them, and JP can start T8 without waiting for T6.
+- **JP** has the harness, the fusion and the final class.
+- **Alejandro** has the recommenders, including both embedding-based ones (dense and BPR). T5 (same artist) is probably **the biggest score gain** of all (see Section 3).
 
 ---
 
@@ -82,7 +84,7 @@ We build **4 simple "recommenders"**. Each one gives a ranked list of songs for 
 | --- | --- | --- | --- |
 | 1 | **Better BM25** | Keyword search, but: add tags, count the current message more | Alejandro |
 | 2 | **Same artist** | Songs by artists already played in this conversation | Alejandro |
-| 3 | **Dense (Qwen3)** | Search by meaning using the song embeddings | JP |
+| 3 | **Dense (Qwen3)** | Search by meaning using the song embeddings | Alejandro |
 | 4 | **BPR similar** | Songs similar to the ones already played | Alejandro |
 | → | **Merge (RRF)** | A song high in several lists goes to the top | JP |
 
@@ -144,9 +146,11 @@ JP opens a pull request. **Alejandro** reviews it and runs the baseline command 
 **Alejandro — T5. Same-artist recommender (simple version).** Return the songs by already-played artists, the most recent artist first, then by popularity. Empty on turn 1.
 → `retrieval/session_cf.py` → done when its validation score is written down.
 
-**JP — T6. Dense recommender.**
+**Fri Oct 2 — Alejandro:** review and run JP's `fix/ale` PR first (T4/T5 adapted to the harness; expect bm25_plus val_all mean ≈ 0.2214).
+
+**Alejandro — T6. Dense recommender** (moved from JP on Oct 2). Write it as a `Scorer`, like `bm25_plus`.
 1. Download the song embeddings once and save them locally.
-2. **Check first** that our Qwen3 model produces the same kind of vectors: embed a song's own name/artist and see if that song comes out at rank 1.
+2. **Check first** that our Qwen3 model produces the same kind of vectors: embed a song's own name/artist and see if that song comes out at rank 1. If it does not, stop and tell JP before building the rest.
 3. Embed the user's message and return the closest songs.
 4. Measure the time per query.
 
@@ -158,10 +162,10 @@ Each person runs the *other's* code and gets the same numbers. Check on test onc
 
 ### Sat Oct 3 – Sun Oct 4
 
-**Alejandro — T7. BPR recommender.** Average the BPR vectors of the played songs, return the most similar songs. Also use it to order the same-artist list. (It uses the embedding loader from JP's `dense.py`, merged on Oct 3.)
+**Alejandro — T7. BPR recommender.** Average the BPR vectors of the played songs, return the most similar songs. Also use it to order the same-artist list. (It reuses the embedding loader from his own `dense.py`.)
 → `retrieval/session_cf.py`.
 
-**JP — T8. Merge (RRF).** Combine the 4 lists. Try a few weights per list **on validation** and keep the best.
+**JP — T8. Merge (RRF).** Start with the 2 lists that already exist (bm25_plus, same_artist), then add dense and BPR when they are merged. Try a few weights per list **on validation** and keep the best.
 → `retrieval/fusion.py` → done when the merge beats every single recommender.
 
 ### Mon Oct 5
@@ -186,7 +190,7 @@ Each person runs the *other's* code and gets the same numbers. Check on test onc
 ## 7. How we work together
 
 - Each person only edits **their own files**. The shared files (T1–T3) change only if both agree.
-- One branch per task (for example `alejandro/bm25-plus`, `jp/dense`) → pull request → the other person reviews and runs it → merge.
+- One branch per task (for example `alejandro/dense`, `jp/fusion`) → pull request → the other person reviews and runs it → merge.
 - Each person keeps a log: `results/jp.md`, `results/alejandro.md`. One line per experiment:
 
   | What I changed | nDCG@20 | diversity | final | Keep? |
@@ -226,4 +230,4 @@ python -m retrieval.evaluation.evaluate --predictions predictions.json --ground_
 
 - Does either of us have an NVIDIA GPU? (Dense is slow on CPU.)
 - Ask a TA: must predictions come from `text_to_item_retrieval(query)`, or can we use our own runner?
-- JP adds `torch` + `sentence-transformers` to `requirements.txt` in a small PR (needed for T6).
+- Alejandro adds `torch` + `sentence-transformers` to `requirements.txt` in a small PR (needed for T6).
