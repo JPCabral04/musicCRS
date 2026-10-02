@@ -297,7 +297,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   1. `FusionScorer.score(ctx, k, policy)` (W2-2): drops played tracks from every component list **before** RRF (so they don't steal ranks), and uses weight 0 for `same_artist` when `use_same_artist=False`.
   2. `finalize_top_k(..., exclude_played=policy.exclude_played)`: the final safety net.
 - **No scorer removes played tracks itself.** Otherwise the switch would have to be passed to every scorer, and forgetting one would silently break Part 2.
-- **Code status (Oct 1):** `BM25PlusRetriever.score_from_parts` (`bm25_plus.py`) and `SameArtistScorer.score` (`session_cf.py`) still remove played tracks internally. Remove that when the shared harness (T2) lands. Agree on it at the sync first (Worker 1's files).
+- **Code status (Oct 2):** done. `bm25_plus.py` and `session_cf.py` now follow the `Scorer` contract and keep played tracks; only `finalize_top_k` (and later fusion) removes them.
 
 ---
 
@@ -462,6 +462,8 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   - Tags are noisy and long (33 on average). They make documents longer, and BM25's length normalization (`b`) then lowers title/artist matches. Measure it, don't assume it helps.
   - Tag order: whether `tag_list` is sorted by relevance is **A VERIFICAR** (it matters only for a top-N cut).
 - **Latency (Part 2).** Two `get_scores` calls over 47k docs plus `argpartition`: expected to take a few ms. **A VERIFICAR** with `ms/query`.
+- **As built (Oct 2, JP adapted Alejandro's first version).** `score(ctx, k)` adds the exact `get_scores` of the current message and of `history_text(ctx)` (earlier user/assistant messages + played tracks' name/artist/album). Played tracks kept. 2.3 ms/query. Results on val0 (final): baseline 0.2069 → + tags 0.2151 → split query `w_history` 0 / 0.1 / 0.3 / 0.5 / 1 / 1.5 / 2 / 3 / 5 = 0.1628 / 0.1968 / 0.2098 / 0.2135 / 0.2160 / 0.2173 / 0.2176 / 0.2180 / 0.2185. History with user messages only (no played tracks): 0.1414. The hypothesis "weight the current message more" was wrong: the current message alone is weak (w=0), and the baseline already gets the history signal by gluing the whole conversation into one query. Kept `w_history=3.0` (nDCG flat from 1.5 on, the rest is diversity; best of 0.3 / 1 / 3 on every fold). val_all: **0.2214, spread 0.0071** (baseline 0.2072; baseline + tags 0.2185).
+  - **Where the gain comes from: diversity, not ranking.** nDCG@20 is essentially the baseline's (val0 0.1620 → 0.1628; same 200 val0 sessions: 0.1672 → 0.1701, and ndcg@1 0.0438 → 0.0388). On val_all, +0.0142 final = 0.8 × 0.0036 nDCG (+0.003) + 0.2 × 0.0569 diversity (+0.011): ~80% diversity, mostly from `tag_list`. So `bm25_plus` is a fusion component that brings tags, not a better ranker; the nDCG gain must come from same-artist, dense and BPR.
 
 ---
 
@@ -540,6 +542,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 
 - **Why it's split in two.** `same_artist` looks like the biggest single gain, and it needs no embeddings. So a simple version (W1-2a) is built early, next to `bm25_plus.py`. Its lists then exist before fusion starts. W1-2b adds the BPR parts once `dense.py`'s `load_track_matrix` is merged (Oct 2).
 - **W1-2a (early):** `SameArtistScorer` ordered by recency of the matching played track, then `popularity`. It only needs the catalog.
+  - **As built (Oct 2).** Strict sort key `(recency rank, -popularity)`, score = `-rank`; `recency_decay` removed (with a strict order it has no effect). Played tracks kept. Gold in the pool (with `artist_id`): 0.651 for turns 2-8 (0.635-0.669 per turn), mean pool 46 tracks at turn 2 → 102 at turn 8. Standalone: val0 0.1898 (nDCG 0.1507; 1,040 of 8,000 lists empty), val1 0.1953, val2 0.1831.
 - **W1-2b (later):** `BPRSimilarityScorer`, and BPR cosine as the tie-breaker inside `SameArtistScorer`. Compare both orderings on val.
 
 - **Objective.** Use what was already played. The data shows this is the strongest signal we have: in turns 2–8, **65% of gold tracks share an artist with a played track**, and that pool is only ~60 tracks (Section 2.1). BPR similarity also adds "people who play these also play…".
