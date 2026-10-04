@@ -37,6 +37,7 @@ from .evaluation.evaluate import evaluate
 from .evaluation.make_ground_truth import make_ground_truth
 from .session_cf import SameArtistScorer
 from .dense import DenseScorer
+from .session_cf import SameArtistScorer, BPRSimilarityScorer
 
 DATASET = "talkpl-ai/TalkPlayData-Challenge-Dataset"
 VAL_FOLDS_PATH = "data/val_folds.json"
@@ -95,6 +96,7 @@ METHODS: dict[str, Callable[[], Scorer]] = {
     "bm25_plus": BM25PlusRetriever,
     "same_artist": lambda: SameArtistScorer(MusicCatalogLoader()),
     "dense": DenseScorer,
+    "bpr_sim": lambda: BPRSimilarityScorer(MusicCatalogLoader()),
 }
 
 
