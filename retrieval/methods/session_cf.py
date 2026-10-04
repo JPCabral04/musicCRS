@@ -1,4 +1,4 @@
-"""Session signals (T5, T7): tracks by artists already played in the session
+"""Session signals (T5/ T7): tracks by artists already played in the session
 and tracks similar in BPR latent space.
 
 In the dataset 65% of the gold tracks (turns 2-8) share an artist with a played
@@ -6,13 +6,16 @@ track, and that pool is small (~60 tracks). Played tracks are NOT removed here:
 SessionPolicy does that once, in fusion and finalize_top_k.
 
 Usage:
-    python -m retrieval.experiments.run_experiment --method same_artist --split val
-    python -m retrieval.experiments.run_experiment --method bpr_sim --split val
+    python -m retrieval.run_experiment --method same_artist --split val
+    python -m retrieval.run_experiment --method bpr_sim --split val
+    python -m retrieval.run_experiment --method bpr_sim --split val
 """
 import numpy as np
 
-from ..context import TurnContext
-from ..data_loader import MusicCatalogLoader
+from .bm25 import BM25Retriever
+from .context import TurnContext
+from .data_loader import MusicCatalogLoader
+from .dense import load_track_matrix
 from .dense import load_track_matrix
 
 
@@ -44,16 +47,15 @@ class SameArtistScorer:
         # The order is the signal; -rank keeps it (fusion uses ranks).
         return [(track_id, -rank) for rank, track_id in enumerate(ranked[:k])]
 
-
 class BPRSimilarityScorer:
     """Task T7: Recommends tracks similar to the centroid of played tracks in BPR CF space."""
     name = "bpr_sim"
 
-    def __init__(self, catalog: MusicCatalogLoader, cache_dir: str = "./cache/embeddings") -> None:
+    def __init__(self, catalog: MusicCatalogLoader | None = None, cache_dir: str = "./cache/embeddings") -> None:
         """Loads precomputed cf-bpr matrix and aligns with track_ids."""
-        self.catalog = catalog  # reused by the runner (load it once)
-        # Catalog order, same as DenseScorer and BM25: row i of the matrix is track_ids[i].
-        self.track_ids = list(catalog.metadata_dict)
+        self.catalog = catalog or MusicCatalogLoader()
+        bm25_ref = BM25Retriever()
+        self.track_ids = bm25_ref.track_ids
         self.tid_to_idx = {tid: i for i, tid in enumerate(self.track_ids)}
 
         self.matrix, self.has_vector = load_track_matrix(

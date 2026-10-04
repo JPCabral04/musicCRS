@@ -32,12 +32,12 @@ from ..methods.bm25 import BM25Retriever
 from ..methods.bm25_plus import BM25PlusRetriever
 from ..context import (Scorer, SessionPolicy, TurnContext, finalize_top_k,
                       iter_turn_contexts, load_sessions)
-from ..data_loader import MusicCatalogLoader
-from ..evaluation.evaluate import evaluate
-from ..evaluation.make_ground_truth import make_ground_truth
-from ..methods.session_cf import SameArtistScorer, BPRSimilarityScorer
-from ..methods.dense import DenseScorer
-from ..methods.fusion import build_fusion
+from .data_loader import MusicCatalogLoader
+from .evaluation.evaluate import evaluate
+from .evaluation.make_ground_truth import make_ground_truth
+from .session_cf import SameArtistScorer, BPRSimilarityScorer
+from .dense import DenseScorer
+from .session_cf import SameArtistScorer, BPRSimilarityScorer
 
 DATASET = "talkpl-ai/TalkPlayData-Challenge-Dataset"
 VAL_FOLDS_PATH = "data/val_folds.json"
@@ -95,12 +95,8 @@ METHODS: dict[str, Callable[[], Scorer]] = {
     "bm25_baseline": BM25BaselineScorer,
     "bm25_plus": BM25PlusRetriever,
     "same_artist": lambda: SameArtistScorer(MusicCatalogLoader()),
-    "dense": DenseScorer,  # metadata field, query prompt, current message
-    "dense_noprompt": lambda: DenseScorer(use_prompt=False),
-    "dense_last_turn": lambda: DenseScorer(query_mode="current+last_turn"),
-    "dense_attributes": lambda: DenseScorer(field="attributes-qwen3_embedding_0.6b"),
+    "dense": DenseScorer,
     "bpr_sim": lambda: BPRSimilarityScorer(MusicCatalogLoader()),
-    "fusion": build_fusion,  # weights tuned by tune_fusion.py
 }
 
 

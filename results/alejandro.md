@@ -1,52 +1,11 @@
 # Alejandro's Experiment Log
 
-| What I changed | Split | nDCG@20 | diversity | final | ms/query | Keep? |
-|---|---|---|---|---|---|---|
-| T6: Dense retrieval (Qwen3-Embedding-0.6B, `dense`) | val0 | 0.0694 | 0.6067 | 0.1769 | 5.7 cached (76 live, GPU) | Yes (fusion) |
-| T7: BPR similarity scorer (cf-bpr centroid, `bpr_sim`) | val0 | 0.1037 | 0.5359 | 0.1901 | 0.6 | Yes (fusion) |
-| T7: `bpr_sim` | val_all (mean) | 0.1103 | 0.5427 | 0.1968 (spread 0.0120) | 0.6 | Yes (fusion) |
-
 ## Task T6: Dense Recommender (`dense.py`)
 
 ### First version (Oct 4, `63ec099`)
 - **Sanity Check:** Passed (Median Rank <= 5 between local Qwen3 encoder and HuggingFace vectors).
-- **Latency (CPU):** ~2293.5 ms/query, one query at a time → a full val0 run (8,000 turns) would take ~5 h, so only `--limit 10` (80 turns) finished.
-- **Validation Run (`--limit 10`):** `ndcg@20` 0.0907 (80 turns: too few to compare).
-
-### Speed fix (Oct 4, JP)
-- Queries are embedded in batches by `DenseScorer.prepare` (called by the runner) and cached by text in `cache/dense/`; GPU float16 when available; `max_seq_length = 512`.
-- Track matrix loaded column-wise; every catalog ID is asserted present. **492 tracks have empty text/audio vectors** (zero row, never retrieved by dense).
-- **Sanity check:** self-rank 1 for 50/50 tracks (GPU, float16).
-- **Live latency** (`python -m retrieval.methods.dense --time 100`, no cache): median **76 ms/query** on GPU (RTX 3060), **394 ms** on CPU (16 threads).
-- A full val0 run takes ~2 min on the GPU (~1 min embedding, then 5.7 ms/query from the cache).
-
-### Results (played tracks removed, full folds)
-
-| Method | Field | Prompt | Query | Split | nDCG@20 | Diversity | Final |
-| --- | --- | --- | --- | --- | ---: | ---: | ---: |
-| `dense` | metadata | yes | current | val0 | 0.0694 | 0.6067 | 0.1769 |
-| `dense_noprompt` | metadata | no | current | val0 | 0.0625 | 0.5538 | 0.1607 |
-| `dense_last_turn` | metadata | yes | current + last user msg | val0 | 0.0771 | 0.5663 | 0.1750 |
-| `dense_attributes` | attributes | yes | current | val0 | 0.0274 | 0.4373 | 0.1094 |
-| `dense` | metadata | yes | current | val_all | 0.0672 (0.0694 / 0.0664 / 0.0657) | 0.6038 | **0.1745** (spread 0.0054) |
-| `dense_last_turn` | metadata | yes | current + last user msg | val_all | **0.0718** (0.0771 / 0.0700 / 0.0683) | 0.5660 | 0.1706 (spread 0.0087) |
-
-- **Decision:** metadata field with the query prompt (both clear wins). `current+last_turn` has the higher nDCG on every fold but less diversity; both top-200 lists are cached (`cache/runs/dense[_last_turn]_val{0,1,2}_top200.pkl`) and T8 fusion picks the one that fuses better.
-- Standalone, dense is below BM25 (nDCG 0.07 vs 0.16) but brings much more diversity (0.60 vs 0.39): a fusion component, not a ranker on its own.
-
-## Task T7: BPR Similarity Scorer (`session_cf.py`)
-- **Implementation:** `BPRSimilarityScorer` (`bpr_sim`). Computes centroid of played tracks' BPR vectors and ranks catalog by cosine similarity. Returns empty list on turn 1.
-- **Latency:** 1.0 ms/query.
-- **Validation Results (`val`):**
-  - `ndcg@20`: 0.1037
-  - `catalog_diversity`: 0.5359
-  - `final_score`: 0.1901
-- **Status:** Complete and verified.
-
-### Check and cleanup (Oct 5, JP)
-- Track order now comes from the catalog (`list(catalog.metadata_dict)`, like `DenseScorer`) instead of loading a whole `BM25Retriever` just for its `track_ids` (same order, so same numbers).
-- `cache/embeddings/cf-bpr.npy`: (47071, 128), **616 tracks without a vector** (zero row).
-- val0 reproduced: final **0.1901** (0.6 ms/query).
-- **val_all:** nDCG@20 mean 0.1103 (0.1037 / 0.1146 / 0.1125), diversity 0.5427, final **mean 0.1968, spread 0.0120** (0.1901 / 0.2022 / 0.1980).
-- Standalone, `bpr_sim` (0.1968) is a bit above `same_artist` (val0 0.1898): lower nDCG (0.10 vs 0.15) but much more diversity (0.54 vs 0.35). A fusion component.
-- **Pending (W1-2b, only if the fused score needs it):** recency-weighted centroid (`recency_decay`, tuned on val) and BPR cosine as the tie-breaker inside `same_artist`.
+- **Latency (CPU):** ~2293.5 ms/query.
+- **Validation Run (`--limit 10`):**
+  - `ndcg@20`: 0.0907
+  - `ms/query`: 2293.5
+- **Decision:** `DenseScorer` is implemented, verified, and integrated into `METHODS`. Query embeddings/top-200 candidates are available for fusion (T8).
