@@ -48,7 +48,7 @@ def load_track_matrix(
     aligns rows to track_ids, L2-normalizes them, and saves to cache_dir.
 
     Row i of the matrix is track_ids[i] (the catalog order, same as BM25).
-    Tracks with an empty vector (616 in cf-bpr) get a zero row.
+    Tracks with an empty vector (492 in the Qwen3 fields, 616 in cf-bpr) get a zero row.
 
     Returns:
         matrix: float32 array of shape (N, dim)
