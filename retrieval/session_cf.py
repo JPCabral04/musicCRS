@@ -1,4 +1,5 @@
-"""Session signals (T5): tracks by artists already played in the session.
+"""Session signals (T5/ T7): tracks by artists already played in the session
+and tracks similar in BPR latent space.
 
 In the dataset 65% of the gold tracks (turns 2-8) share an artist with a played
 track, and that pool is small (~60 tracks). Played tracks are NOT removed here:
@@ -6,9 +7,14 @@ SessionPolicy does that once, in fusion and finalize_top_k.
 
 Usage:
     python -m retrieval.run_experiment --method same_artist --split val
+    python -m retrieval.run_experiment --method bpr_sim --split val
 """
+import numpy as np
+
+from .bm25 import BM25Retriever
 from .context import TurnContext
 from .data_loader import MusicCatalogLoader
+from .dense import load_track_matrix
 
 
 class SameArtistScorer:
@@ -38,3 +44,50 @@ class SameArtistScorer:
             recency[track_id], -(self.metadata[track_id].get("popularity") or 0)))
         # The order is the signal; -rank keeps it (fusion uses ranks).
         return [(track_id, -rank) for rank, track_id in enumerate(ranked[:k])]
+
+class BPRSimilarityScorer:
+    """Task T7: Recommends tracks similar to the centroid of played tracks in BPR CF space."""
+    name = "bpr_sim"
+
+    def __init__(self, catalog: MusicCatalogLoader | None = None, cache_dir: str = "./cache/embeddings") -> None:
+        """Loads precomputed cf-bpr matrix and aligns with track_ids."""
+        self.catalog = catalog or MusicCatalogLoader()
+        bm25_ref = BM25Retriever()
+        self.track_ids = bm25_ref.track_ids
+        self.tid_to_idx = {tid: i for i, tid in enumerate(self.track_ids)}
+
+        self.matrix, self.has_vector = load_track_matrix(
+            field="cf-bpr", track_ids=self.track_ids, cache_dir=cache_dir, normalize=True
+        )
+
+    def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
+        """
+        Cosine similarity to the centroid of played tracks in BPR space.
+
+        Played tracks are kept (SessionPolicy handles removal). Empty at turn 1.
+        """
+        if not ctx.played_track_ids:
+            return []
+
+        vecs = []
+        for tid in ctx.played_track_ids:
+            idx = self.tid_to_idx.get(tid)
+            if idx is not None and self.has_vector[idx]:
+                vecs.append(self.matrix[idx])
+
+        if not vecs:
+            return []
+
+        centroid = np.mean(vecs, axis=0)
+        norm = np.linalg.norm(centroid)
+        if norm == 0:
+            return []
+        centroid = centroid / norm
+
+        sims = self.matrix @ centroid
+
+        k = min(k, len(sims))
+        top_indices = np.argpartition(-sims, k - 1)[:k]
+        top_indices = top_indices[np.argsort(-sims[top_indices])]
+
+        return [(self.track_ids[idx], float(sims[idx])) for idx in top_indices]

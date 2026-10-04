@@ -1,5 +1,10 @@
 # Alejandro's Experiment Log
 
+| What I changed | Split | nDCG@20 | diversity | final | ms/query | Keep? |
+|---|---|---|---|---|---|---|
+| T6: Dense retrieval (Qwen3-Embedding-0.6B) | val (limit 10) | 0.0907 | 0.0212 | 0.0768 | 2293.5 | Yes |
+| T7: BPR similarity scorer (cf-bpr centroid) | val | 0.1037 | 0.5359 | 0.1901 | 1.0 | Yes |
+
 ## Task T6: Dense Recommender (`dense.py`)
 
 ### First version (Oct 4, `63ec099`)
@@ -27,3 +32,12 @@
 
 - **Decision:** metadata field with the query prompt (both clear wins). `current+last_turn` has the higher nDCG on every fold but less diversity; both top-200 lists are cached (`cache/runs/dense[_last_turn]_val{0,1,2}_top200.pkl`) and T8 fusion picks the one that fuses better.
 - Standalone, dense is below BM25 (nDCG 0.07 vs 0.16) but brings much more diversity (0.60 vs 0.39): a fusion component, not a ranker on its own.
+
+## Task T7: BPR Similarity Scorer (`session_cf.py`)
+- **Implementation:** `BPRSimilarityScorer` (`bpr_sim`). Computes centroid of played tracks' BPR vectors and ranks catalog by cosine similarity. Returns empty list on turn 1.
+- **Latency:** 1.0 ms/query.
+- **Validation Results (`val`):**
+  - `ndcg@20`: 0.1037
+  - `catalog_diversity`: 0.5359
+  - `final_score`: 0.1901
+- **Status:** Complete and verified.
