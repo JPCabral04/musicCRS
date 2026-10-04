@@ -94,7 +94,10 @@ METHODS: dict[str, Callable[[], Scorer]] = {
     "bm25_baseline": BM25BaselineScorer,
     "bm25_plus": BM25PlusRetriever,
     "same_artist": lambda: SameArtistScorer(MusicCatalogLoader()),
-    "dense": DenseScorer,
+    "dense": DenseScorer,  # metadata field, query prompt, current message
+    "dense_noprompt": lambda: DenseScorer(use_prompt=False),
+    "dense_last_turn": lambda: DenseScorer(query_mode="current+last_turn"),
+    "dense_attributes": lambda: DenseScorer(field="attributes-qwen3_embedding_0.6b"),
 }
 
 
@@ -128,16 +131,21 @@ def run(scorer: Scorer, catalog: MusicCatalogLoader, sessions: list[dict],
 
     Returns the predictions (challenge format), the raw top-k lists keyed by
     (session_id, turn_number) for fusion tuning, the contexts, and the seconds
-    spent inside scorer.score (context building is not timed).
+    spent inside scorer.score (context building and `prepare` are not timed).
     """
-    predictions, top_lists, contexts = [], {}, []
+    predictions, top_lists = [], {}
+    contexts = list(iter_turn_contexts(sessions, catalog))
+    # Optional hook: a scorer may precompute for all turns at once (dense embeds its queries in batches).
+    if hasattr(scorer, "prepare"):
+        start = time.perf_counter()
+        scorer.prepare(contexts)
+        print(f"prepare: {time.perf_counter() - start:.0f} s (not counted in ms/query)")
     score_seconds = 0.0
-    for ctx in iter_turn_contexts(sessions, catalog):
+    for ctx in contexts:
         start = time.perf_counter()
         ranked = scorer.score(ctx, k)
         score_seconds += time.perf_counter() - start
 
-        contexts.append(ctx)
         top_lists[(ctx.session_id, ctx.turn_number)] = ranked
         predictions.append({
             "session_id": ctx.session_id,

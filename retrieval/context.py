@@ -55,7 +55,11 @@ class SessionPolicy:
 
 
 class Scorer(Protocol):
-    """Contract every retrieval component follows, so fusion and the runner can swap them."""
+    """Contract every retrieval component follows, so fusion and the runner can swap them.
+
+    Optional: `prepare(contexts)`, called once by the runner before scoring, to
+    precompute for all turns at once (DenseScorer embeds its queries in batches).
+    """
     name: str
 
     def score(self, ctx: TurnContext, k: int = 200) -> list[tuple[str, float]]:
