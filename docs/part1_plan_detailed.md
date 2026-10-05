@@ -635,6 +635,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   - Optimize **final_score**, not only nDCG. The grid computes diversity on the full 1,000 val sessions.
   - Signals behave differently at turn 1 (no session). Per-turn weights (turn 1 vs 2–8) are a simple, defensible extension, but only if the gain on val is clear.
   - Overfitting risk: too many knobs on 8,000 turns. Prefer the simplest weights within ~0.002 of the best.
+- **As built (Oct 5, JP).** `fusion.py` holds `rrf`, `fuse` (SessionPolicy + RRF, shared by production and tuning), `FusionScorer` and `build_fusion`; the grid lives in a separate `tune_fusion.py` (`--check`, `--grid`, `--confirm N`) that reads the cached lists. Each component alone reproduces its standalone val0 score. Grid: `bm25_plus = 1` (only weight ratios matter), others in {0, 0.5, 1, 2, 4}, dense = `dense` or `dense_last_turn`, 225 sets. Frozen: **`bm25_plus 1, same_artist 2, bpr_sim 2, dense 1`, k_rrf 10** (k 3 / 5 / 30 / 60 / 100 worse). val_all: **final 0.2753, spread 0.0106** (nDCG 0.198, diversity 0.586), vs `bm25_plus` 0.2214. Log: `results/jp.md`. Per-turn weights not tried.
 
 ---
 
@@ -673,6 +674,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   - Whether QuickFeed/the TAs require predictions to be produced through `text_to_item_retrieval` is **A VERIFICAR** (the README says "or your own runner", L96). Ask a TA before the Oct 2 sync.
   - **Plan B if they do require it:** make `text_to_item_retrieval` parse the baseline query string (the output of `_build_retrieval_input`) back into a `TurnContext`. The last `user:` line is the current message, and the `track_id: <uuid>` inside the expanded `assistant:` lines gives the played tracks (`data_loader.py` L53 adds that prefix). Signature: `parse_baseline_query(query: str) -> TurnContext` in `context.py`. Pitfall: a user message can contain line breaks, so don't split naively on `\n`. Anchor on the `user: ` / `assistant: ` prefixes and test it against `build_turn_context` on 100 val turns. The two must agree.
   - Submission path in the group repo: `G1/predictions.json` and `G1/report.md` (confirmed).
+- **As built (Oct 5, JP).** `FinalRetriever` wraps `build_fusion()`; `retrieve(ctx, topk, policy)` = `fusion.score` + `finalize_top_k`. `text_to_item_retrieval` treats the string as a first-turn current message (no Plan B parser: QuickFeed only scores the file). `main` pre-embeds dense queries via `fusion.prepare`, then asserts exactly 20 IDs per turn on top of `check_predictions`. val0 output is identical to the T8 fusion run. **Test: ndcg@20 0.1522, diversity 0.6489, final 0.2516** (10 points, capped). Log: `results/jp.md`.
 
 ---
 
