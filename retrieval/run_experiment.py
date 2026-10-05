@@ -35,9 +35,8 @@ from .context import (Scorer, SessionPolicy, TurnContext, finalize_top_k,
 from .data_loader import MusicCatalogLoader
 from .evaluation.evaluate import evaluate
 from .evaluation.make_ground_truth import make_ground_truth
-from .session_cf import SameArtistScorer
-from .dense import DenseScorer
 from .session_cf import SameArtistScorer, BPRSimilarityScorer
+from .dense import DenseScorer
 
 DATASET = "talkpl-ai/TalkPlayData-Challenge-Dataset"
 VAL_FOLDS_PATH = "data/val_folds.json"
