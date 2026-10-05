@@ -4,3 +4,8 @@ websocket-client
 colorama
 datasets
 bm25s
+# Dense retrieval (retrieval/dense.py). For the GPU build of torch:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch
+transformers>=4.51
+sentence-transformers>=2.7
