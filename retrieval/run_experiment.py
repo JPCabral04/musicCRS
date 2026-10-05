@@ -35,7 +35,7 @@ from .context import (Scorer, SessionPolicy, TurnContext, finalize_top_k,
 from .data_loader import MusicCatalogLoader
 from .evaluation.evaluate import evaluate
 from .evaluation.make_ground_truth import make_ground_truth
-from .session_cf import SameArtistScorer
+from .session_cf import SameArtistScorer, BPRSimilarityScorer
 from .dense import DenseScorer
 
 DATASET = "talkpl-ai/TalkPlayData-Challenge-Dataset"
@@ -98,6 +98,7 @@ METHODS: dict[str, Callable[[], Scorer]] = {
     "dense_noprompt": lambda: DenseScorer(use_prompt=False),
     "dense_last_turn": lambda: DenseScorer(query_mode="current+last_turn"),
     "dense_attributes": lambda: DenseScorer(field="attributes-qwen3_embedding_0.6b"),
+    "bpr_sim": lambda: BPRSimilarityScorer(MusicCatalogLoader()),
 }
 
 
