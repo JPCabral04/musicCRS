@@ -32,6 +32,7 @@ from .run_experiment import (CATALOG_SIZE, FOLDS, REPORT_METRICS, RUNS_DIR,
 COMPONENTS = ["bm25_plus", "same_artist", "bpr_sim", "dense", "dense_last_turn"]
 DENSE_VARIANTS = ["dense", "dense_last_turn"]  # T6 left the choice to fusion: one of the two
 GRID = [0, 0.5, 1, 2, 4]                      # weights relative to bm25_plus = 1
+GRID_K_RRF = 60                               # k_rrf of the first pass over all weight sets (fusion.K_RRF is the frozen result)
 K_RRF_VALUES = [10, 30, 60, 100]              # tried on the best weight sets only
 GRID_PATH = os.path.join(RUNS_DIR, "fusion_grid_val0.json")
 
@@ -95,12 +96,12 @@ def grid(catalog: MusicCatalogLoader) -> None:
     data = load_fold("val0", catalog)
     sets = weight_grid()
     start = time.perf_counter()
-    rows = [{"weights": w, "k_rrf": K_RRF, **score_weights(data, w)} for w in sets]
+    rows = [{"weights": w, "k_rrf": GRID_K_RRF, **score_weights(data, w, GRID_K_RRF)} for w in sets]
     print(f"{len(sets)} weight sets in {time.perf_counter() - start:.0f} s")
     rows.sort(key=lambda row: -row["final_score"])
     for row in rows[:3]:
         rows += [{"weights": row["weights"], "k_rrf": k, **score_weights(data, row["weights"], k)}
-                 for k in K_RRF_VALUES if k != K_RRF]
+                 for k in K_RRF_VALUES if k != GRID_K_RRF]
     rows.sort(key=lambda row: -row["final_score"])
 
     with open(GRID_PATH, "w", encoding="utf-8") as f:
