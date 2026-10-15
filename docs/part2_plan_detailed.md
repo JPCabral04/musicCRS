@@ -4,7 +4,7 @@
 
 - Line numbers refer to commit `642687b` of this repo.
 - **A VERIFICAR** = not confirmed in the code or the data yet. Check it before relying on it.
-- Signatures below are **proposals**: signatures and docstrings only, no implementation. The owner may change them before the freeze (end of T3, Thu Oct 15). After that, changes need both people.
+- Signatures below are **proposals**: signatures and docstrings only, no implementation. The owner may change them before the freeze (end of T3, Fri Oct 16). After that, changes need both people.
 
 ---
 
@@ -209,42 +209,42 @@ class Services:                     # created once in main, shared by every agen
 
 Each task: owner · files · interface · design notes · LLM calls · done when.
 
-### T1 — Database · **JP** · Wed Oct 14
+### T1 — Database · **JP** · Thu Oct 15
 
 - Files: `musiccrs/db.py`, `musiccrs/build_db.py`.
 - Notes: §3.1. Store **all** artists of a track. Keep `name_norm` for exact lookups and FTS5 for partial ones.
 - LLM calls: 0.
 - Done when: the DB builds in under a minute; `find_by_name("bohemian rhapsody")` and `find_by_name("Bohemian Rhapsody", artist="QUEEN")` both return the Queen track; `get()` on 3 random IDs matches `metadata_dict`.
 
-### T2 — Agent skeleton · **JP** · Thu Oct 15
+### T2 — Agent skeleton · **JP** · Fri Oct 16
 
 - Files: `musiccrs/musiccrs.py`, `musiccrs/state.py`.
 - Notes: §1.2 (singletons in `main`), §3.2, §3.4, §3.6. Remove the double `platform.start()`. Keep `/quit` and the welcome message. The welcome message mentions "type help".
 - LLM calls: 0 (slash path).
 - Done when: `/add queen: bohemian rhapsody`, `/list`, `/del queen: bohemian rhapsody`, `/clear` work in the browser and each sends a `PLAYLIST` act.
 
-### T3 — Intent parser · **JP** · Thu Oct 15
+### T3 — Intent parser · **JP** · Fri Oct 16
 
 - Files: `musiccrs/nlu.py`, `musiccrs/nlu_examples.json` (≥ 2 sentences per intent, with the expected parse).
 - Notes: §3.3. Low temperature (0). Ask for JSON only. Include `pending_kind` in the prompt.
 - LLM calls: 1 (2 with a retry).
 - Done when: `python -m musiccrs.nlu --check` parses ≥ 90% of `nlu_examples.json` correctly and prints the ms per call. **Then the interfaces are frozen.**
 
-### T4 — R6 recommend · **JP** · Fri Oct 16
+### T4 — R6 recommend · **JP** · Sat Oct 17
 
 - File: `musiccrs/handlers_recs.py`.
 - Notes: §4. `retriever.retrieve(ctx, topk=5, policy)`. Empty playlist → ask the user to add songs first, or offer R8. Store the 5 IDs in `pending_options` with `pending_kind="recommendation"` and send them as `OPTIONS`.
 - LLM calls: 0 beyond the parser.
 - Done when: 3 different playlists (rock / jazz / pop) give 5 clearly related songs, none already in the playlist; latency written down.
 
-### T5 — R1 playlist panel · **Alejandro** · Wed Oct 14 → Sun Oct 18
+### T5 — R1 playlist panel · **Alejandro** · Thu Oct 15 → Tue Oct 20
 
 - Files: `frontend/src/components/Playlist/Playlist.tsx`, `Playlist.css`; small edits to `ChatWidget.tsx` / `ChatBox.tsx` to subscribe to `PLAYLIST` acts.
 - Notes: render the **last** `PLAYLIST` act (the agent is the source of truth). A remove button per track sends `/remove <id>`, a clear button sends `/clear`, and an add box sends `add <text>` as a normal chat message (so R4 disambiguation still works). Hide `PLAYLIST` acts from the chat bubbles. Show the track count and total duration.
 - LLM calls: 0.
 - Done when: add, remove and clear from both the chat and the panel keep the two in sync. `npm test` still passes.
 
-### T6 — Track resolver · **Alejandro** · Thu Oct 15
+### T6 — Track resolver · **Alejandro** · Fri Oct 16
 
 - File: `musiccrs/resolver.py`.
 
@@ -261,14 +261,14 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - LLM calls: 0.
 - Done when: a test list of ~15 loose references (case, punctuation, accents, "feat.", typos, artist only) resolves as expected.
 
-### T7 — R2 handlers · **Alejandro** · Fri Oct 16
+### T7 — R2 handlers · **Alejandro** · Sat Oct 17
 
 - File: `musiccrs/handlers_playlist.py` (ADD, REMOVE, SHOW, CLEAR).
 - Notes: 1 match → add/remove. Several → T8. 0 → "I couldn't find X in the database". A duplicate add → say so, don't add twice. REMOVE resolves against the **playlist first** ("remove the Queen song").
 - LLM calls: 0 beyond the parser.
 - Done when: all 4 actions work in natural language with 2+ phrasings each, and the panel updates.
 
-### T8 — R4 disambiguation · **Alejandro** · Sat Oct 17
+### T8 — R4 disambiguation · **Alejandro** · Sun Oct 18
 
 - File: `musiccrs/handlers_playlist.py`.
 - Ranking: `score = popularity/93 + same_artist_as_playlist + cosine(BPR(track), mean BPR(playlist))`. With an empty playlist, popularity only. Show the top 5 as `OPTIONS` and store them in `pending_options` (`pending_kind="disambiguation"`).
@@ -276,14 +276,14 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - LLM calls: 0 beyond the parser.
 - Done when: "add Love" shows 5 sensible options; with a rock playlist, rock versions rank higher.
 
-### T9 — R8 playlist from a description · **JP** · Sat Oct 17
+### T9 — R8 playlist from a description · **JP** · Sun Oct 18
 
 - File: `musiccrs/handlers_recs.py` (CREATE_PLAYLIST).
 - Notes: one LLM call returns `{"query": "...", "minutes": N}`. If no duration is implied, `minutes` comes from the activity (gym ≈ 60, a party is longer, "a few songs" is short). Length = `round(minutes * 60 / mean_duration)`, clamped 8–25 (mean duration in §2). Then `text_to_item_retrieval(query, topk=length)`. Ask before replacing a non-empty playlist, or show the result as a proposal (A VERIFICAR: decide in T9).
 - LLM calls: 1.
 - Done when: 3 descriptions give relevant playlists of different lengths, and the length rule is written in the code comment.
 
-### T10 — R5 questions · **Alejandro** · Sat Oct 17 – Sun Oct 18
+### T10 — R5 questions · **Alejandro** · Mon Oct 19 – Tue Oct 20
 
 - File: `musiccrs/handlers_qa.py` (ASK_TRACK, ASK_ARTIST).
 - Question types (the `question` slot): track → `artist`, `album`, `release_year`, `duration` (popularity as a fifth if time allows); artist → `track_count`, `top_track`, `albums`, `genres` (top tags across the artist's tracks).
@@ -291,7 +291,7 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - LLM calls: 0 beyond the parser.
 - Done when: all 8 types answer correctly, with 2 phrasings each.
 
-### T11 — R7 selection · **JP** · Sun Oct 18
+### T11 — R7 selection · **JP** · Mon Oct 19 – Tue Oct 20
 
 - File: `musiccrs/selection.py` (SELECT).
 
@@ -307,20 +307,20 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 - LLM calls: 0–1.
 - Done when: ≥ 3 formulations work (all / ordinal subset / none / except-by-artist), including one with an exclusion. Clear `pending_options` after use.
 
-### T12 — R3 help · **Alejandro** · Sun Oct 18
+### T12 — R3 help · **Alejandro** · Tue Oct 20
 
 - File: `musiccrs/handlers_playlist.py` (HELP).
 - Notes: a fixed, well-written text with one example per feature. If the parser fills a `topic` slot ("how do I remove?"), show only that part.
 - LLM calls: 0 beyond the parser.
 - Done when: "help", "what can you do?" and "how do I make a playlist?" all give a useful answer.
 
-### T13 — Simulator config + latency · **JP** · Mon Oct 19
+### T13 — Simulator config + latency · **JP** · Wed Oct 21
 
 - File: `simulation/config.py` (only `COMMANDS`, `GROUP_ID`). The token and key are filled in locally and never committed.
 - Run `python simulation/simulator.py --no-upload`, read the dialogues, and fix what fails. Record ms per intent (§7).
-- Done when: a full `--no-upload` run completes with no crash. Final upload on Tue Oct 20.
+- Done when: a full `--no-upload` run completes with no crash. Final upload on Mon Oct 26.
 
-### T14 — Demo script + README · **Alejandro** · Tue Oct 20
+### T14 — Demo script + README · **Alejandro** · Thu Oct 22 – Fri Oct 23
 
 - Files: `docs/part2_demo.md` (one or two example lines per R1–R8, in demo order), plus a "Part 2" section in `README.md` (how to build the DB and run).
 - Done when: both people run the full script without a failure.
@@ -332,14 +332,17 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 | Day | JP | Alejandro | Output |
 | --- | --- | --- | --- |
 | Tue Oct 13 | send the plan | run backend + frontend, read the code | — |
-| Wed Oct 14 | T1 database → PR | T5 panel with a fake `PLAYLIST` | `cache/musiccrs.db` |
-| Thu Oct 15 | T2 skeleton, T3 parser → PR, **freeze** | review T1, T6 resolver | slash commands work |
-| Fri Oct 16 | T4 R6 | T7 R2 | NL add/remove/view/clear |
-| Sat Oct 17 | T9 R8 | T8 R4, start T10 | |
-| Sun Oct 18 | T11 R7 | T10 R5, T12 R3, finish T5 | all R1–R8 in branches |
-| Mon Oct 19 | **sync**: run each other's code; T13 simulator `--no-upload` | **sync** | everything in `main` |
-| Tue Oct 20 | rehearse, mock exam, final upload | T14 demo script, rehearse, mock exam | go / no-go for Oct 21 |
-| Wed Oct 21 | present (or move to Oct 28) | present | |
+| Thu Oct 15 | T1 database → PR | T5 panel with a fake `PLAYLIST` | `cache/musiccrs.db` |
+| Fri Oct 16 | T2 skeleton, T3 parser → PR, **freeze** | review T1, T6 resolver | slash commands work |
+| Sat Oct 17 | T4 R6 | T7 R2 | NL add/remove/view/clear |
+| Sun Oct 18 | T9 R8 | T8 R4 | |
+| Mon Oct 19 | T11 R7 (start) | T10 R5 (start) | |
+| Tue Oct 20 | T11 R7 (finish) | T10 R5, T12 R3, finish T5 | all R1–R8 in branches |
+| Wed Oct 21 | **sync**: run each other's code; T13 simulator `--no-upload` | **sync** | everything in `main` |
+| Thu Oct 22 – Fri Oct 23 | fix what the simulator found | T14 demo script + README | buffer |
+| Sat Oct 24 – Mon Oct 26 | rehearse, mock exam, final upload | rehearse, mock exam | |
+| Tue Oct 27 | go / no-go | go / no-go | |
+| Wed Oct 28 | present | present | |
 
 ---
 
@@ -378,8 +381,8 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 | `FinalRetriever` too slow or too heavy on the demo laptop | Build it without dense (bm25_plus + same_artist + bpr_sim). R6 still relates to the playlist through same_artist and BPR. |
 | T1–T3 late (critical path) | Alejandro codes against a stub `TrackDB` with 10 hard-coded tracks; the interfaces in §3 are enough. |
 | The fuzzy matcher is too eager ("Love" matches 500 tracks) | A threshold + exact matches first. R4 shows only the top 5. |
-| One person falls behind | Raise it at the Oct 19 sync and reassign **whole tasks**. |
-| A requirement still failing on Oct 20 | Move the presentation to Oct 28 (one attempt only). |
+| One person falls behind | Raise it at the Oct 21 sync and reassign **whole tasks**. |
+| A requirement still failing on Oct 27 | Fix it that day; the Oct 22–23 buffer exists for this. The presentation is one attempt only. |
 
 ---
 
@@ -398,7 +401,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 
 ## 11. Open items — A VERIFICAR
 
-1. The presentation date (Oct 21 or Oct 28). Book early: few slots, no rebooking.
+1. The presentation slot on Oct 28 (Part 3 is also due that day). Book early: few slots, no rebooking.
 2. The exact JSON key names of a dialogue-act annotation in the socket message (§1.3).
 3. The unit of `duration` (seconds or ms) and its mean (§2).
 4. Ollama key works; the latency of one Llama-3.3-70B call from our network.

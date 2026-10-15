@@ -1,6 +1,6 @@
 # Part 2 — Simple Plan (JP & Alejandro)
 
-Presentation: **Wed Oct 21** (target), **Wed Oct 28** (buffer). In person, **one attempt only**, 10 points. For details (signatures, data fields, design notes), see `part2_plan_detailed.md`. Start here.
+Presentation: **Wed Oct 28** (target; rescheduled on Oct 15 because T1 had not started — dates are flexible, finishing everything is what matters). In person, **one attempt only**, 10 points. For details (signatures, data fields, design notes), see `part2_plan_detailed.md`. Start here.
 
 ---
 
@@ -82,20 +82,20 @@ user message
 
 Each task: **what** → **file** → **done when**.
 
-### Tue Oct 13 (today)
+### Tue Oct 13 (done)
 
 - **JP:** send this plan to Alejandro.
 - **Alejandro:** run the backend (`python musiccrs/musiccrs.py`) and the frontend (`npm start`), and read `musiccrs/musiccrs.py` and `frontend/src/components/ChatBox/ChatBox.tsx`.
 
-### Wed Oct 14
+### Thu Oct 15 (today)
 
 **JP — T1. Database.** Build an SQLite file from the catalog: tracks, artists, normalized names, plus a full-text index. Add one shared `normalize()` function.
-→ `musiccrs/db.py`, `musiccrs/build_db.py` → done when `TrackDB().find_by_name("bohemian rhapsody")` returns the Queen track. **Open the PR first thing:** Alejandro needs it on Thursday.
+→ `musiccrs/db.py`, `musiccrs/build_db.py` → done when `TrackDB().find_by_name("bohemian rhapsody")` returns the Queen track. **Open the PR first thing:** Alejandro needs it on Friday.
 
 **Alejandro — T5. Playlist panel (start).** Add a side panel that shows the playlist from a `PLAYLIST` message. Until T2 exists, test with a fake message.
 → `frontend/src/components/Playlist/` → done when a fake playlist renders next to the chat.
 
-### Thu Oct 15
+### Fri Oct 16
 
 **JP — T2. Agent skeleton.** Per-user state (playlist, pending options), a table from intent → handler function, slash commands (`/add artist: track`, `/del ...`, `/list`, `/clear`, `/recommend`, `/remove <id>`), and a `PLAYLIST` message after every change.
 → `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add queen: bohemian rhapsody` then `/list` works.
@@ -106,7 +106,9 @@ Each task: **what** → **file** → **done when**.
 **Alejandro — T6. Track resolver.** Given a name (and maybe an artist), return the matching tracks: exact normalized match first, then fuzzy.
 → `musiccrs/resolver.py` → done when "dont stop me now", "DON'T STOP ME NOW!" and "don't stop me now by queen" all find the Queen track.
 
-### Fri Oct 16 – Sun Oct 18
+### Sat Oct 17 – Tue Oct 20
+
+Suggested order: JP T4 (Sat), T9 (Sun), T11 (Mon–Tue). Alejandro T7 (Sat), T8 (Sun), T10 (Mon–Tue), T12 and T5 finish (Tue).
 
 **JP — T4. R6 recommend.** Pass the playlist to `FinalRetriever` as the "played tracks" and return 5 songs that are not in the playlist. Save them as pending options for T11.
 → `musiccrs/handlers_recs.py` → done when a playlist of 3 rock songs gives 5 related songs, not just popular ones.
@@ -131,22 +133,28 @@ Each task: **what** → **file** → **done when**.
 
 **Alejandro — T5. Playlist panel (finish).** Connect it to the real `PLAYLIST` message: remove and clear buttons, plus an add box.
 
-### Mon Oct 19 — sync meeting
+### Wed Oct 21 — sync meeting
 
 - Each person runs the *other's* code from a fresh `git pull`.
 - **JP — T13:** set `COMMANDS` in `simulation/config.py` to our real slash commands; run `python simulation/simulator.py --no-upload`; write down the time per intent.
 - Fix whatever breaks. Merge everything into `main`.
 
-### Tue Oct 20
+### Thu Oct 22 – Fri Oct 23
 
 - **Alejandro — T14:** a demo script with one example line per requirement (R1–R8), plus a short README section.
+- Buffer for whatever is still failing (these two days exist so that nothing is cut).
+
+### Sat Oct 24 – Mon Oct 26
+
 - Rehearse the demo end to end with the script.
 - Mock exam: each person explains the **other's** code.
 - Final simulator run **with upload** (only the last upload counts).
 
-### Wed Oct 21 — present
+### Tue Oct 27 — go / no-go
 
-**Buffer rule:** if on Tue Oct 20 a requirement still fails, we move to **Oct 28**. We get one attempt, so a late full demo beats an early partial one.
+If a requirement still fails, fix it today. We get one attempt, so a full demo beats a partial one.
+
+### Wed Oct 28 — present
 
 ---
 
@@ -174,7 +182,7 @@ python simulation/simulator.py                   # final run, uploads
 
 ## 7. Still to find out
 
-- **The presentation date:** book an Oct 21 or Oct 28 slot early (few slots, no rebooking).
+- **The presentation date:** book an Oct 28 slot early (few slots, no rebooking). Part 3 is also due Oct 28, so check that both fit.
 - **Ollama key:** does the key work at `https://ollama.ux.uis.no`, and how long does one call take?
 - **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense.
-- **Simulator:** which slash commands does it really send? Check its first `--no-upload` run before Oct 19.
+- **Simulator:** which slash commands does it really send? Check its first `--no-upload` run before Oct 21.
