@@ -135,12 +135,14 @@ class TrackDB:
             tracks.append(track)
         return tracks
 
-    def find_by_name(self, name):
+    def find_by_name(self, name, artist=None):
         """Tracks whose name matches `name`, most popular first.
 
         The match is exact after normalize(): it can be the full name or the
         base name (without the version suffix). "hotel california" finds
         "Hotel California - 2013 Remaster".
+
+        If `artist` is given, one of the artists of the track must match it too.
         """
         name_norm = normalize(name)
         if name_norm == "":
@@ -150,7 +152,19 @@ class TrackDB:
             SELECT DISTINCT tracks.*
             FROM tracks
             JOIN track_names ON track_names.track_id = tracks.track_id
-            WHERE track_names.name_norm = ? OR track_names.base_norm = ?
-            ORDER BY tracks.popularity DESC
+            WHERE (track_names.name_norm = ? OR track_names.base_norm = ?)
         """
-        return self.run_query(sql, (name_norm, name_norm))
+        params = [name_norm, name_norm]
+
+        if artist is not None:
+            artist_norm = normalize(artist)
+            if artist_norm != "":
+                sql = sql + """
+                    AND tracks.track_id IN (
+                        SELECT track_id FROM track_artists WHERE artist_norm = ?
+                    )
+                """
+                params.append(artist_norm)
+
+        sql = sql + " ORDER BY tracks.popularity DESC"
+        return self.run_query(sql, params)
