@@ -43,6 +43,23 @@ CREATE INDEX idx_names_norm ON track_names(name_norm);
 CREATE INDEX idx_names_base ON track_names(base_norm);
 """
 
+# One row per artist of a track (some tracks have several artists).
+# position 0 is the main artist.
+CREATE_ARTISTS = """
+CREATE TABLE track_artists (
+    track_id    TEXT NOT NULL,
+    position    INTEGER NOT NULL,
+    artist_name TEXT NOT NULL,
+    artist_norm TEXT NOT NULL
+)
+"""
+
+INSERT_ARTIST = "INSERT INTO track_artists VALUES (?, ?, ?, ?)"
+
+CREATE_ARTISTS_INDEXES = """
+CREATE INDEX idx_artists_norm ON track_artists(artist_norm);
+"""
+
 
 def make_track_row(track_id, metadata):
     """Turn the catalog entry of one track into a row of the tracks table."""
@@ -79,6 +96,18 @@ def make_name_rows(track_id, metadata):
     return rows
 
 
+def make_artist_rows(track_id, metadata):
+    """Rows of the track_artists table: one for each artist of the track."""
+    rows = []
+    position = 0
+    for artist in metadata["artist_name"]:
+        artist_norm = normalize(artist)
+        row = (track_id, position, artist, artist_norm)
+        rows.append(row)
+        position = position + 1
+    return rows
+
+
 def build(catalog, db_path):
     """Create a fresh database file at db_path with the tracks table."""
     # Make sure the cache folder exists and the old database is gone.
@@ -89,18 +118,23 @@ def build(catalog, db_path):
     connection = sqlite3.connect(db_path)
     connection.execute(CREATE_TRACKS)
     connection.execute(CREATE_NAMES)
+    connection.execute(CREATE_ARTISTS)
 
     track_rows = []
     name_rows = []
+    artist_rows = []
     for track_id in catalog:
         metadata = catalog[track_id]
         track_row = make_track_row(track_id, metadata)
         track_rows.append(track_row)
         name_rows.extend(make_name_rows(track_id, metadata))
+        artist_rows.extend(make_artist_rows(track_id, metadata))
 
     connection.executemany(INSERT_TRACK, track_rows)
     connection.executemany(INSERT_NAME, name_rows)
+    connection.executemany(INSERT_ARTIST, artist_rows)
     connection.executescript(CREATE_NAMES_INDEXES)
+    connection.executescript(CREATE_ARTISTS_INDEXES)
     connection.commit()
     connection.close()
 
@@ -119,6 +153,10 @@ def main():
     cursor = connection.execute("SELECT COUNT(*) FROM track_names")
     count = cursor.fetchone()[0]
     print("names:", count)
+
+    cursor = connection.execute("SELECT COUNT(*) FROM track_artists")
+    count = cursor.fetchone()[0]
+    print("artists:", count)
     connection.close()
 
 
