@@ -1,6 +1,9 @@
 """Track database for the Part 2 agent (T1)."""
+import json
 import re
+import sqlite3
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 # Where the database file lives: <repo root>/cache/musiccrs.db
@@ -63,3 +66,61 @@ def base_name(name: str) -> str:
     if base == "":
         base = normalize(name)
     return base
+
+
+@dataclass(frozen=True)
+class Track:
+    """All the data of one track, as the agent uses it."""
+    track_id: str
+    name: str                  # first name of the track in the catalog
+    artists: tuple             # all artists, main artist first
+    album: str
+    popularity: int            # 0 to 93
+    release_date: str          # "YYYY-MM-DD", or "" if unknown
+    duration_ms: int           # 0 if unknown
+    tags: tuple
+
+
+def row_to_track(row):
+    """Turn one row of the tracks table into a Track."""
+    # The lists were saved as JSON text: turn the text back into a list.
+    artists_list = json.loads(row["artists_json"])
+    tags_list = json.loads(row["tags_json"])
+
+    return Track(
+        track_id=row["track_id"],
+        name=row["name"],
+        artists=tuple(artists_list),
+        album=row["album"],
+        popularity=row["popularity"],
+        release_date=row["release_date"],
+        duration_ms=row["duration_ms"],
+        tags=tuple(tags_list),
+    )
+
+
+class TrackDB:
+    """Read-only access to cache/musiccrs.db."""
+
+    def __init__(self, path=DEFAULT_DB_PATH):
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(
+                str(path) + " not found. Build it first: python -m musiccrs.build_db")
+
+        # mode=ro opens the file read-only. check_same_thread=False lets the
+        # chat server use this connection from different threads.
+        uri = path.resolve().as_uri() + "?mode=ro"
+        self.connection = sqlite3.connect(uri, uri=True, check_same_thread=False)
+
+        # With Row we can read a column by its name: row["name"].
+        self.connection.row_factory = sqlite3.Row
+
+    def get(self, track_id):
+        """Return the Track with this ID, or None if there is none."""
+        cursor = self.connection.execute(
+            "SELECT * FROM tracks WHERE track_id = ?", (track_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return row_to_track(row)
