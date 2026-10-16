@@ -1,6 +1,13 @@
 """Track database for the Part 2 agent (T1)."""
 import re
 import unicodedata
+from pathlib import Path
+
+# Where the database file lives: <repo root>/cache/musiccrs.db
+this_file = Path(__file__).resolve()
+musiccrs_folder = this_file.parent
+repo_root = musiccrs_folder.parent
+DEFAULT_DB_PATH = repo_root / "cache" / "musiccrs.db"
 
 
 def normalize(text: str) -> str:
