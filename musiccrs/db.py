@@ -183,3 +183,30 @@ class TrackDB:
             ORDER BY tracks.popularity DESC
         """
         return self.run_query(sql, (artist_norm,))
+
+    def fuzzy_candidates(self, text, limit=50):
+        """Tracks that share at least one word with `text`, best match first.
+
+        It is wide on purpose: it returns candidates, and the resolver (T6)
+        chooses the right one among them.
+        """
+        words = normalize(text).split()
+        if len(words) == 0:
+            return []
+
+        # FTS5 query: "its" OR "my" OR "life". The quotes make each word plain
+        # text, so words like "or" or "and" are not read as FTS5 operators.
+        quoted_words = []
+        for word in words:
+            quoted_words.append('"' + word + '"')
+        fts_query = " OR ".join(quoted_words)
+
+        sql = """
+            SELECT tracks.*
+            FROM tracks_fts
+            JOIN tracks ON tracks.track_id = tracks_fts.track_id
+            WHERE tracks_fts MATCH ?
+            ORDER BY tracks_fts.rank
+            LIMIT ?
+        """
+        return self.run_query(sql, (fts_query, limit))
