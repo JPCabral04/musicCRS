@@ -34,3 +34,25 @@ def normalize(text: str) -> str:
     # Remove the spaces at the start and the end.
     text = text.strip()
     return text
+
+
+def base_name(name: str) -> str:
+    """Normalized name without the version suffix and without bracketed parts.
+
+    "Hotel California - 2013 Remaster"  -> "hotel california"
+    "Letting Go (feat. Sarah Green)"    -> "letting go"
+    """
+    # Keep only what comes before the first " - ".
+    parts = name.split(" - ")
+    base = parts[0]
+
+    # Remove everything inside (...) and [...].
+    base = re.sub(r"\(.*?\)", " ", base)
+    base = re.sub(r"\[.*?\]", " ", base)
+
+    base = normalize(base)
+
+    # If nothing is left (the whole name was in brackets), use the full name.
+    if base == "":
+        base = normalize(name)
+    return base
