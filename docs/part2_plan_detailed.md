@@ -75,14 +75,25 @@ T5 adds the playlist panel **beside** `ChatBox` and reads the same `onMessage` s
 Catalog: `talkpl-ai/TalkPlayData-Challenge-Track-Metadata`, split `all_tracks`, 47,071 tracks (Part 1 plan §2.2).
 
 - Fields: `track_id, ISRC, track_name, artist_name, album_name, tag_list, popularity, release_date, duration, artist_id, album_id`.
-- `track_name`, `artist_name`, `album_name`, `artist_id`, `album_id` are **lists** (up to 4 artists). Matching must check **every** artist in the list, not only the first.
-- 10,638 distinct artists; the median artist has 1 track.
+- `track_name`, `artist_name`, `album_name`, `artist_id`, `album_id` are **lists**. Matching must check **every** name and **every** artist, not only the first.
+- 10,638 distinct artists (10,500 after `normalize()`); the median artist has 1 track.
 - `popularity` 0–93 (median 38) → the R4 ranking signal.
 - `tag_list`: noisy user tags (mean 33 per track) → R5 "genres of an artist", and R8 matching.
 - `release_date` → R5 "release year". `duration` → R5 "how long" and the R8 length.
-- **Name ambiguity and duration** (counted on Oct 13 with a read-only script): see the table below.
+- **Name, artist and duration facts** (counted on Oct 15 by `python -m musiccrs.build_db`):
 
-NAME_FACTS_TABLE
+| Fact | Value | Consequence |
+| --- | --- | --- |
+| Tracks with 2 or 3 names (aliases, e.g. "Falling Down" + "Falling Down - Explicit Album Version") | 2,224 + 68 (49,431 names) | the DB stores every name (`track_names`) |
+| Names with a version suffix `" - ..."` ("Hotel California - 2013 Remaster", most Beatles tracks "- Remastered") | 4,932 (~10%) | the DB also stores `base_norm`, the name without the suffix and brackets |
+| Normalized names shared by > 1 track | 3,282 names (9,093 tracks); 4,363 base names (12,264 tracks) | R4 disambiguation is common (`"love"` → 7 tracks) |
+| `artist_id` list does not line up with `artist_name` (e.g. 1 name, 3 IDs) | 3,342 tracks | `artist_id` is not used; artists are matched by name |
+| Tracks with up to 31 artists; 55 artist entries are empty or "!!!" | — | every artist is stored |
+| `duration` unit | **milliseconds** | `Track.duration_ms` |
+| `duration` known (> 0) | 46,409 tracks (662 are 0) | mean **239.7 s**, median 227.9 s → the R8 length rule |
+| `release_date` empty | 644 tracks | R5 says "unknown" |
+| `album_name` with 2 entries | 13,351 tracks | `Track.album` = the first |
+| Famous songs **not** in the catalog | "Bohemian Rhapsody" (only an a cappella mix), "Don't Stop Me Now" | use "Smells Like Teen Spirit", "Hotel California", "It's My Life" in tests and the demo |
 
 ---
 
@@ -92,8 +103,12 @@ NAME_FACTS_TABLE
 
 ```python
 def normalize(text: str) -> str:
-    """Lowercase, strip accents (NFKD → ASCII), replace punctuation with spaces, collapse spaces.
-    "Don't Stop Me Now!" -> "don t stop me now". Used by the DB build and every lookup."""
+    """Lowercase, strip accents (NFKD), drop apostrophes, "&" -> "and", other punctuation -> spaces.
+    "Don't Stop Me Now!" -> "dont stop me now". Used by the DB build and every lookup."""
+
+def base_name(name: str) -> str:
+    """normalize() of the name without its " - ..." suffix and (...) / [...] parts.
+    "Hotel California - 2013 Remaster" -> "hotel california"."""
 
 @dataclass(frozen=True)
 class Track:
@@ -103,21 +118,23 @@ class Track:
     album: str
     popularity: int
     release_date: str
-    duration: float           # seconds (A VERIFICAR unit)
+    duration_ms: int          # milliseconds, 0 if unknown
     tags: tuple[str, ...]
 
 class TrackDB:
     def __init__(self, path: str = "cache/musiccrs.db") -> None: ...
     def get(self, track_id: str) -> Track | None: ...
     def find_by_name(self, name: str, artist: str | None = None) -> list[Track]:
-        """Exact match on the normalized name (and on any normalized artist, if given)."""
+        """Exact match on any normalized name or base name (and on any normalized artist,
+        if given). Most popular first."""
     def fuzzy_candidates(self, text: str, limit: int = 50) -> list[Track]:
-        """FTS5 match on name + artists, for typos and partial names."""
+        """FTS5 match (words joined by OR) on names + artists, best BM25 first.
+        Wide on purpose: T6 re-scores the candidates (typos are T6's job)."""
     def artist_tracks(self, artist: str) -> list[Track]:
         """All tracks where any artist matches `artist` after normalize()."""
 ```
 
-- Tables: `tracks(track_id PK, name, name_norm, album, popularity, release_date, duration, tags_json)`, `track_artists(track_id, position, artist_id, artist_name, artist_norm)`, plus an FTS5 virtual table over `name_norm` + artists. Indexes on `name_norm` and `artist_norm`.
+- Tables: `tracks(track_id PK, name, album, popularity, release_date, duration_ms, tags_json, artists_json)`, `track_names(track_id, name, name_norm, base_norm)` (every alias), `track_artists(track_id, position, artist_name, artist_norm)`, plus `tracks_fts` (FTS5 over the normalized names + artists). Indexes on `name_norm`, `base_norm` and `artist_norm`.
 - `musiccrs/build_db.py`: `python -m musiccrs.build_db` reads `MusicCatalogLoader().metadata_dict` and writes `cache/musiccrs.db` (`cache/` is gitignored). It is idempotent: it deletes the file and rebuilds.
 - Why SQLite: it is in the Python stdlib, it is one file, it does exact lookups by index in ms, and FTS5 handles partial names. The spec allows any database.
 
@@ -214,14 +231,15 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 - Files: `musiccrs/db.py`, `musiccrs/build_db.py`.
 - Notes: §3.1. Store **all** artists of a track. Keep `name_norm` for exact lookups and FTS5 for partial ones.
 - LLM calls: 0.
-- Done when: the DB builds in under a minute; `find_by_name("bohemian rhapsody")` and `find_by_name("Bohemian Rhapsody", artist="QUEEN")` both return the Queen track; `get()` on 3 random IDs matches `metadata_dict`.
+- Done when: `python -m musiccrs.build_db` builds the DB in under a minute and its self-check passes: `find_by_name("smells like teen spirit")` returns Nirvana first; `find_by_name("SMELLS LIKE TEEN SPIRIT!", artist="nirvana")` returns only Nirvana; `find_by_name("hotel california")` finds the Eagles remaster; `fuzzy_candidates("teen spirit nirvana")` contains it; `artist_tracks("queen")` returns 13 tracks; `get()` on 3 random IDs matches `metadata_dict`.
+- Result (Oct 15): build 2.5 s (+ 6 s catalog load); exact lookup 0.2 ms, fuzzy 7 ms.
 
 ### T2 — Agent skeleton · **JP** · Fri Oct 16
 
 - Files: `musiccrs/musiccrs.py`, `musiccrs/state.py`.
 - Notes: §1.2 (singletons in `main`), §3.2, §3.4, §3.6. Remove the double `platform.start()`. Keep `/quit` and the welcome message. The welcome message mentions "type help".
 - LLM calls: 0 (slash path).
-- Done when: `/add queen: bohemian rhapsody`, `/list`, `/del queen: bohemian rhapsody`, `/clear` work in the browser and each sends a `PLAYLIST` act.
+- Done when: `/add nirvana: smells like teen spirit`, `/list`, `/del nirvana: smells like teen spirit`, `/clear` work in the browser and each sends a `PLAYLIST` act.
 
 ### T3 — Intent parser · **JP** · Fri Oct 16
 
@@ -389,7 +407,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 ## 10. Demo order (draft for T14)
 
 1. R3 "what can you do?"
-2. R2 "add bohemian rhapsody", "add dont stop me now by queen", "show my playlist"
+2. R2 "add smells like teen spirit", "add its my life by bon jovi", "show my playlist"
 3. R4 "add Love" → choose "the second one"
 4. R1 remove a song from the panel, add one from the panel box
 5. R5 "who sings Hotel California?", "how many songs by Queen do you have?" (+ the other types)
@@ -403,7 +421,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 
 1. The presentation slot on Oct 28 (Part 3 is also due that day). Book early: few slots, no rebooking.
 2. The exact JSON key names of a dialogue-act annotation in the socket message (§1.3).
-3. The unit of `duration` (seconds or ms) and its mean (§2).
+3. ~~The unit of `duration` and its mean~~ — resolved Oct 15: milliseconds, mean 239.7 s (§2).
 4. Ollama key works; the latency of one Llama-3.3-70B call from our network.
 5. Whether `rapidfuzz` is worth a new dependency, or FTS5 + `difflib` is enough.
 6. Which phrasings the simulator's persona dialogues actually use (read the first `--no-upload` run).

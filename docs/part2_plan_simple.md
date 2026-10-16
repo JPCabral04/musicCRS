@@ -11,7 +11,7 @@ Effort scale: easy = 1, medium = 2, hard = 3.
 | | **JP** (base + recommendations) | | **Alejandro** (frontend + lookup) | |
 | --- | --- | --- | --- | --- |
 | Foundation | T1 **Database** (SQLite built from the catalog) | 2 | T5 **R1 playlist panel** in the React UI | 3 |
-| | T2 **Agent skeleton**: state, handler table, slash commands, `PLAYLIST` message | 2 | T6 **Track resolver**: finds a track from a loose name ("dont stop me now" → "Don't Stop Me Now") | 3 |
+| | T2 **Agent skeleton**: state, handler table, slash commands, `PLAYLIST` message | 2 | T6 **Track resolver**: finds a track from a loose name ("its my life" → "It's My Life") | 3 |
 | | T3 **Intent parser**: one LLM call turns the message into an intent + slots | 3 | T7 **R2** add / remove / view / clear | 2 |
 | Features | T4 **R6 recommend** 3–5 songs from the playlist | 1 | T8 **R4 disambiguation** ("Love" → pick one), ranked | 2 |
 | | T9 **R8 playlist from a description** ("sad love songs") | 2 | T10 **R5 questions** about tracks and artists | 2 |
@@ -33,7 +33,7 @@ A web chat where a user manages a playlist and gets recommendations, **in natura
 | ID | What the user can do | Points | Task |
 | --- | --- | --- | --- |
 | R1 | See the playlist next to the chat; remove/clear/add from the UI too | 1 | T5 |
-| R2 | "add Bohemian Rhapsody", "remove the Queen song", "show my playlist", "clear it". Only songs from our database. By name, or name + artist | 3 | T1, T6, T7 |
+| R2 | "add Smells Like Teen Spirit", "remove the Queen song", "show my playlist", "clear it". Only songs from our database. By name, or name + artist | 3 | T1, T6, T7 |
 | R3 | "what can you do?" → explanation of the features | 1 | T12 |
 | R4 | "add Love" → a short, well-ranked list to choose from | 1 | T8 |
 | R5 | "who sings X?", "when was X released?", "how many songs does Y have?" (4 types for tracks or artists) | 1 | T10 |
@@ -90,7 +90,7 @@ Each task: **what** → **file** → **done when**.
 ### Thu Oct 15 (today)
 
 **JP — T1. Database.** Build an SQLite file from the catalog: tracks, artists, normalized names, plus a full-text index. Add one shared `normalize()` function.
-→ `musiccrs/db.py`, `musiccrs/build_db.py` → done when `TrackDB().find_by_name("bohemian rhapsody")` returns the Queen track. **Open the PR first thing:** Alejandro needs it on Friday.
+→ `musiccrs/db.py`, `musiccrs/build_db.py` → done when `python -m musiccrs.build_db` passes its self-check: `find_by_name("smells like teen spirit")` returns the Nirvana track first, and `find_by_name("hotel california")` finds "Hotel California - 2013 Remaster" (Eagles). ("Bohemian Rhapsody" and "Don't Stop Me Now" are **not** in the catalog.) **Open the PR first thing:** Alejandro needs it on Friday.
 
 **Alejandro — T5. Playlist panel (start).** Add a side panel that shows the playlist from a `PLAYLIST` message. Until T2 exists, test with a fake message.
 → `frontend/src/components/Playlist/` → done when a fake playlist renders next to the chat.
@@ -98,13 +98,13 @@ Each task: **what** → **file** → **done when**.
 ### Fri Oct 16
 
 **JP — T2. Agent skeleton.** Per-user state (playlist, pending options), a table from intent → handler function, slash commands (`/add artist: track`, `/del ...`, `/list`, `/clear`, `/recommend`, `/remove <id>`), and a `PLAYLIST` message after every change.
-→ `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add queen: bohemian rhapsody` then `/list` works.
+→ `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add nirvana: smells like teen spirit` then `/list` works.
 
 **JP — T3. Intent parser.** One LLM call returns JSON: the intent plus its slots (track, artist, question type, description, selection). Slash commands skip the LLM.
 → `musiccrs/nlu.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.**
 
 **Alejandro — T6. Track resolver.** Given a name (and maybe an artist), return the matching tracks: exact normalized match first, then fuzzy.
-→ `musiccrs/resolver.py` → done when "dont stop me now", "DON'T STOP ME NOW!" and "don't stop me now by queen" all find the Queen track.
+→ `musiccrs/resolver.py` → done when "its my life", "IT'S MY LIFE!" and "it's my life by bon jovi" all find the Bon Jovi track.
 
 ### Sat Oct 17 – Tue Oct 20
 
