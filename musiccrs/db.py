@@ -111,7 +111,8 @@ class TrackDB:
         # mode=ro opens the file read-only. check_same_thread=False lets the
         # chat server use this connection from different threads.
         uri = path.resolve().as_uri() + "?mode=ro"
-        self.connection = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        self.connection = sqlite3.connect(
+            uri, uri=True, check_same_thread=False)
 
         # With Row we can read a column by its name: row["name"].
         self.connection.row_factory = sqlite3.Row
@@ -124,3 +125,32 @@ class TrackDB:
         if row is None:
             return None
         return row_to_track(row)
+
+    def run_query(self, sql, params):
+        """Run a SELECT on the tracks table and return a list of Track."""
+        cursor = self.connection.execute(sql, params)
+        tracks = []
+        for row in cursor.fetchall():
+            track = row_to_track(row)
+            tracks.append(track)
+        return tracks
+
+    def find_by_name(self, name):
+        """Tracks whose name matches `name`, most popular first.
+
+        The match is exact after normalize(): it can be the full name or the
+        base name (without the version suffix). "hotel california" finds
+        "Hotel California - 2013 Remaster".
+        """
+        name_norm = normalize(name)
+        if name_norm == "":
+            return []
+
+        sql = """
+            SELECT DISTINCT tracks.*
+            FROM tracks
+            JOIN track_names ON track_names.track_id = tracks.track_id
+            WHERE track_names.name_norm = ? OR track_names.base_norm = ?
+            ORDER BY tracks.popularity DESC
+        """
+        return self.run_query(sql, (name_norm, name_norm))
