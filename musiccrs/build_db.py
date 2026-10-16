@@ -4,11 +4,12 @@ Run from the repo root:
     python -m musiccrs.build_db
 """
 import json
+import random
 import sqlite3
 
 from retrieval.data_loader import MusicCatalogLoader
 
-from .db import DEFAULT_DB_PATH, base_name, normalize
+from .db import DEFAULT_DB_PATH, TrackDB, base_name, normalize
 
 CREATE_TRACKS = """
 CREATE TABLE tracks (
@@ -168,6 +169,61 @@ def build(catalog, db_path):
     connection.close()
 
 
+def self_check(catalog, db_path):
+    """Check the new database with the T1 "done when" tests.
+
+    `assert condition, message` does nothing if the condition is true. If it
+    is false, the script stops with an AssertionError that shows the message.
+    """
+    db = TrackDB(db_path)
+
+    # 1. Exact name: the most popular track comes first (Nirvana, popularity 82).
+    found = db.find_by_name("smells like teen spirit")
+    assert len(found) > 0, "teen spirit: nothing found"
+    assert found[0].artists == ("Nirvana",), "teen spirit: first is not Nirvana"
+    print("OK 1: find_by_name('smells like teen spirit') ->", len(found), "tracks")
+
+    # 2. Capitals, "!" and an artist: only the Nirvana track is left.
+    found = db.find_by_name("SMELLS LIKE TEEN SPIRIT!", artist="nirvana")
+    assert len(found) == 1, "teen spirit + nirvana: expected 1 track"
+    assert found[0].artists == ("Nirvana",), "teen spirit + nirvana: wrong artist"
+    print("OK 2: find_by_name with artist -> 1 track")
+
+    # 3. The base name finds a track whose name has a version suffix.
+    found = db.find_by_name("hotel california")
+    assert len(found) > 0, "hotel california: nothing found"
+    assert found[0].artists == ("Eagles",), "hotel california: first is not Eagles"
+    print("OK 3: find_by_name('hotel california') ->", found[0].name)
+
+    # 4. The full-text search finds the track from a few words of it.
+    found = db.fuzzy_candidates("teen spirit nirvana")
+    found_nirvana = False
+    for track in found:
+        if track.name == "Smells Like Teen Spirit" and track.artists == ("Nirvana",):
+            found_nirvana = True
+    assert found_nirvana, "fuzzy: Nirvana track not among the candidates"
+    print("OK 4: fuzzy_candidates('teen spirit nirvana') ->", len(found), "candidates")
+
+    # 5. All tracks of an artist.
+    found = db.artist_tracks("queen")
+    assert len(found) == 13, "queen: expected 13 tracks, got " + str(len(found))
+    print("OK 5: artist_tracks('queen') -> 13 tracks")
+
+    # 6. get() returns what the catalog has, for 3 random tracks.
+    # Seed 0: the same 3 tracks every time.
+    all_ids = sorted(catalog)
+    generator = random.Random(0)
+    sample_ids = generator.sample(all_ids, 3)
+    for track_id in sample_ids:
+        metadata = catalog[track_id]
+        track = db.get(track_id)
+        assert track.name == metadata["track_name"][0], track_id + ": name differs"
+        assert list(track.artists) == metadata["artist_name"], track_id + ": artists differ"
+        assert track.duration_ms == metadata["duration"], track_id + ": duration differs"
+        assert track.popularity == int(metadata["popularity"]), track_id + ": popularity differs"
+    print("OK 6: get() matches the catalog for 3 random tracks")
+
+
 def main():
     catalog = MusicCatalogLoader().metadata_dict
     print("catalog loaded:", len(catalog), "tracks")
@@ -187,6 +243,8 @@ def main():
     count = cursor.fetchone()[0]
     print("artists:", count)
     connection.close()
+
+    self_check(catalog, DEFAULT_DB_PATH)
 
 
 if __name__ == "__main__":
