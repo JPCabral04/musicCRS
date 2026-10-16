@@ -168,3 +168,18 @@ class TrackDB:
 
         sql = sql + " ORDER BY tracks.popularity DESC"
         return self.run_query(sql, params)
+
+    def artist_tracks(self, artist):
+        """All tracks where one of the artists matches `artist`, most popular first."""
+        artist_norm = normalize(artist)
+        if artist_norm == "":
+            return []
+
+        sql = """
+            SELECT DISTINCT tracks.*
+            FROM tracks
+            JOIN track_artists ON track_artists.track_id = tracks.track_id
+            WHERE track_artists.artist_norm = ?
+            ORDER BY tracks.popularity DESC
+        """
+        return self.run_query(sql, (artist_norm,))
