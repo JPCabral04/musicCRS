@@ -8,7 +8,7 @@ import sqlite3
 
 from retrieval.data_loader import MusicCatalogLoader
 
-from .db import DEFAULT_DB_PATH
+from .db import DEFAULT_DB_PATH, base_name, normalize
 
 CREATE_TRACKS = """
 CREATE TABLE tracks (
@@ -24,6 +24,24 @@ CREATE TABLE tracks (
 """
 
 INSERT_TRACK = "INSERT INTO tracks VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+
+# One row per name of a track (some tracks have 2 or 3 names).
+CREATE_NAMES = """
+CREATE TABLE track_names (
+    track_id  TEXT NOT NULL,
+    name      TEXT NOT NULL,
+    name_norm TEXT NOT NULL,
+    base_norm TEXT NOT NULL
+)
+"""
+
+INSERT_NAME = "INSERT INTO track_names VALUES (?, ?, ?, ?)"
+
+# Indexes make "WHERE name_norm = ?" fast. They are created after the inserts.
+CREATE_NAMES_INDEXES = """
+CREATE INDEX idx_names_norm ON track_names(name_norm);
+CREATE INDEX idx_names_base ON track_names(base_norm);
+"""
 
 
 def make_track_row(track_id, metadata):
@@ -50,6 +68,17 @@ def make_track_row(track_id, metadata):
             duration_ms, tags_json, artists_json)
 
 
+def make_name_rows(track_id, metadata):
+    """Rows of the track_names table: one for each name of the track."""
+    rows = []
+    for name in metadata["track_name"]:
+        name_norm = normalize(name)
+        base_norm = base_name(name)
+        row = (track_id, name, name_norm, base_norm)
+        rows.append(row)
+    return rows
+
+
 def build(catalog, db_path):
     """Create a fresh database file at db_path with the tracks table."""
     # Make sure the cache folder exists and the old database is gone.
@@ -59,14 +88,19 @@ def build(catalog, db_path):
 
     connection = sqlite3.connect(db_path)
     connection.execute(CREATE_TRACKS)
+    connection.execute(CREATE_NAMES)
 
-    rows = []
+    track_rows = []
+    name_rows = []
     for track_id in catalog:
         metadata = catalog[track_id]
-        row = make_track_row(track_id, metadata)
-        rows.append(row)
+        track_row = make_track_row(track_id, metadata)
+        track_rows.append(track_row)
+        name_rows.extend(make_name_rows(track_id, metadata))
 
-    connection.executemany(INSERT_TRACK, rows)
+    connection.executemany(INSERT_TRACK, track_rows)
+    connection.executemany(INSERT_NAME, name_rows)
+    connection.executescript(CREATE_NAMES_INDEXES)
     connection.commit()
     connection.close()
 
@@ -80,8 +114,12 @@ def main():
     connection = sqlite3.connect(DEFAULT_DB_PATH)
     cursor = connection.execute("SELECT COUNT(*) FROM tracks")
     count = cursor.fetchone()[0]
-    connection.close()
     print("tracks in", DEFAULT_DB_PATH, ":", count)
+
+    cursor = connection.execute("SELECT COUNT(*) FROM track_names")
+    count = cursor.fetchone()[0]
+    print("names:", count)
+    connection.close()
 
 
 if __name__ == "__main__":
