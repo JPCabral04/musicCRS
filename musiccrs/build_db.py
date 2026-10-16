@@ -60,6 +60,15 @@ CREATE_ARTISTS_INDEXES = """
 CREATE INDEX idx_artists_norm ON track_artists(artist_norm);
 """
 
+# Full-text search table (FTS5): it indexes every word of the names and artists,
+# so we can find tracks that share some words with a text.
+# track_id is only stored, not searched (UNINDEXED).
+CREATE_FTS = """
+CREATE VIRTUAL TABLE tracks_fts USING fts5(track_id UNINDEXED, names, artists)
+"""
+
+INSERT_FTS = "INSERT INTO tracks_fts VALUES (?, ?, ?)"
+
 
 def make_track_row(track_id, metadata):
     """Turn the catalog entry of one track into a row of the tracks table."""
@@ -108,6 +117,22 @@ def make_artist_rows(track_id, metadata):
     return rows
 
 
+def make_fts_row(track_id, metadata):
+    """Row of the tracks_fts table: all names and all artists as normalized text."""
+    normalized_names = []
+    for name in metadata["track_name"]:
+        normalized_names.append(normalize(name))
+
+    normalized_artists = []
+    for artist in metadata["artist_name"]:
+        normalized_artists.append(normalize(artist))
+
+    # " ".join(list) glues the items of a list into one text, with a space between.
+    names_text = " ".join(normalized_names)
+    artists_text = " ".join(normalized_artists)
+    return (track_id, names_text, artists_text)
+
+
 def build(catalog, db_path):
     """Create a fresh database file at db_path with the tracks table."""
     # Make sure the cache folder exists and the old database is gone.
@@ -119,20 +144,24 @@ def build(catalog, db_path):
     connection.execute(CREATE_TRACKS)
     connection.execute(CREATE_NAMES)
     connection.execute(CREATE_ARTISTS)
+    connection.execute(CREATE_FTS)
 
     track_rows = []
     name_rows = []
     artist_rows = []
+    fts_rows = []
     for track_id in catalog:
         metadata = catalog[track_id]
         track_row = make_track_row(track_id, metadata)
         track_rows.append(track_row)
         name_rows.extend(make_name_rows(track_id, metadata))
         artist_rows.extend(make_artist_rows(track_id, metadata))
+        fts_rows.append(make_fts_row(track_id, metadata))
 
     connection.executemany(INSERT_TRACK, track_rows)
     connection.executemany(INSERT_NAME, name_rows)
     connection.executemany(INSERT_ARTIST, artist_rows)
+    connection.executemany(INSERT_FTS, fts_rows)
     connection.executescript(CREATE_NAMES_INDEXES)
     connection.executescript(CREATE_ARTISTS_INDEXES)
     connection.commit()
