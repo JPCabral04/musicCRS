@@ -3,6 +3,7 @@
 The API key is read from the LLM_API_KEY environment variable, so it is never written
 in the code and cannot be committed by mistake.
 """
+import json
 import os
 
 from openai import OpenAI
@@ -23,3 +24,31 @@ def create_client():
     if api_key == "":
         return None
     return OpenAI(api_key=api_key, base_url=LLM_BASE_URL)
+
+
+def extract_json(text):
+    """The JSON object inside the model's answer, as a dict, or None if there is none.
+
+    '{"intent": "SHOW"}'                         -> {"intent": "SHOW"}
+    '```json\\n{"intent": "SHOW"}\\n```'           -> {"intent": "SHOW"}
+    'Sure! {"intent": "SHOW"} Hope this helps.'  -> {"intent": "SHOW"}
+    '{"intent": "SHOW",}'                        -> None (broken JSON)
+    'I am not sure.'                             -> None
+    """
+    if text is None:
+        return None
+
+    # The object runs from the first "{" to the last "}". Cutting there also drops
+    # the ```json fences and any words the model writes around the object.
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end < start:
+        return None
+    json_text = text[start:end + 1]
+
+    # json.loads raises JSONDecodeError when the text is not valid JSON.
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError:
+        return None
+    return data
