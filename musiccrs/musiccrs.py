@@ -1,4 +1,8 @@
-"""MusicCRS conversational agent."""
+"""MusicCRS conversational agent.
+
+Run from the repo root as a module (so the package imports work):
+    python -m musiccrs.musiccrs
+"""
 
 import json
 
@@ -12,12 +16,34 @@ from dialoguekit.participant.agent import Agent
 from dialoguekit.participant.participant import DialogueParticipant
 from dialoguekit.platforms import FlaskSocketPlatform
 
+from .db import TrackDB
+from .state import DialogueState, Services
+
 OLLAMA_HOST = "https://ollama.ux.uis.no"
 OLLAMA_MODEL = "llama3.3:70b"
 OLLAMA_API_KEY = "SET YOUR API KEY HERE"
 
 _INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
+
+# The heavy objects (DB, retriever, LLM client), shared by every agent.
+# Set once in __main__ below, before the server accepts any connection.
+SERVICES = None
+
+
+def create_services(use_llm=True):
+    """Load the heavy objects once, at startup."""
+    db = TrackDB()
+
+    llm = None
+    if use_llm:
+        llm = ollama.Client(
+            host=OLLAMA_HOST,
+            headers={"Authorization": "Bearer " + OLLAMA_API_KEY},
+        )
+
+    # The retriever (FinalRetriever) is added in T4.
+    return Services(db=db, retriever=None, llm=llm)
 
 
 def playlist_act(state, db):
@@ -43,24 +69,25 @@ def playlist_act(state, db):
 
 
 class MusicCRS(Agent):
-    def __init__(self, use_llm: bool = True):
-        """Initialize MusicCRS agent."""
-        super().__init__(id="MusicCRS")
+    def __init__(self, agent_id="MusicCRS"):
+        """One agent per browser tab.
 
-        if use_llm:
-            self._llm = ollama.Client(
-                host=OLLAMA_HOST,
-                headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
-            )
-        else:
-            self._llm = None
+        DialogueKit creates the agent on every new connection as
+        MusicCRS("MusicCRS"), so the first argument is the agent ID.
+        """
+        super().__init__(id=agent_id)
 
-        self._playlist = []  # Stores the current playlist
+        if SERVICES is None:
+            raise RuntimeError("Services are not loaded. Start the agent with: "
+                               "python -m musiccrs.musiccrs")
+        self.services = SERVICES      # shared by every tab
+        self.state = DialogueState()  # this tab's own playlist
 
     def welcome(self) -> None:
         """Sends the agent's welcome message."""
         utterance = AnnotatedUtterance(
-            "Hello, I'm MusicCRS. What are you in the mood for?",
+            "Hello, I'm MusicCRS. I can build a playlist with you and recommend songs. "
+            "Type /help to see what I can do.",
             participant=DialogueParticipant.AGENT,
         )
         self._dialogue_connector.register_agent_utterance(utterance)
@@ -133,10 +160,10 @@ class MusicCRS(Agent):
         Returns:
             Response from the LLM.
         """
-        if not self._llm:
+        if not self.services.llm:
             return "The agent is not configured to use an LLM"
 
-        llm_response = self._llm.generate(
+        llm_response = self.services.llm.generate(
             model=OLLAMA_MODEL,
             prompt=prompt,
             options={
@@ -158,6 +185,7 @@ class MusicCRS(Agent):
 
 
 if __name__ == "__main__":
+    # Load the DB and the LLM client once, before any user connects.
+    SERVICES = create_services()
     platform = FlaskSocketPlatform(MusicCRS)
-    platform.start()
     platform.start()
