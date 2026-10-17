@@ -12,10 +12,12 @@ from .state import Reply
 def describe_track(track):
     """One line for a track: "Smells Like Teen Spirit by Nirvana".
 
-    The chat renders replies as HTML, so names are escaped: "<" -> "&lt;", "&" -> "&amp;".
+    The chat renders replies as HTML, so "<", ">" and "&" are escaped:
+    "Simon & Garfunkel" -> "Simon &amp; Garfunkel". quote=False keeps "It's" as it is
+    (quotes only matter inside HTML attributes, and the simulator reads the raw text).
     """
-    name = html.escape(track.name)
-    main_artist = html.escape(track.artists[0])
+    name = html.escape(track.name, quote=False)
+    main_artist = html.escape(track.artists[0], quote=False)
     return name + " by " + main_artist
 
 
@@ -33,10 +35,10 @@ def handle_add(parsed, state, services):
     matches = services.db.find_by_name(track_text, artist_text)
     if len(matches) == 0:
         # The user's own text goes back into HTML, so escape it too.
-        safe_track = html.escape(track_text)
+        safe_track = html.escape(track_text, quote=False)
         if artist_text is None:
             return Reply("Sorry, I could not find '" + safe_track + "' in the catalog.")
-        safe_artist = html.escape(artist_text)
+        safe_artist = html.escape(artist_text, quote=False)
         return Reply("Sorry, I could not find '" + safe_track + "' by '"
                      + safe_artist + "' in the catalog.")
 
@@ -61,3 +63,45 @@ def handle_show(parsed, state, services):
         text = text + "<li>" + describe_track(track) + "</li>\n"
     text = text + "</ol>"
     return Reply(text)
+
+
+def handle_remove(parsed, state, services):
+    """REMOVE: take a track out of the playlist, by ID (/remove) or by name (/del)."""
+    # Case 1: "/remove <track_id>" from the remove button of the playlist panel.
+    if "track_id" in parsed.slots:
+        track_id = parsed.slots["track_id"]
+        if track_id not in state.playlist:
+            return Reply("That song is not in your playlist.")
+        state.playlist.remove(track_id)
+        track = services.db.get(track_id)
+        return Reply("Removed " + describe_track(track) + " from your playlist.")
+
+    # Case 2: "/del [artist]: [track]", by name.
+    if "track" not in parsed.slots:
+        return Reply("Which song should I remove? For example: /del nirvana: smells like teen spirit")
+    track_text = parsed.slots["track"]
+
+    artist_text = None
+    if "artist" in parsed.slots:
+        artist_text = parsed.slots["artist"]
+
+    # Look for the first matching track that is in the playlist
+    # (the most popular match may not be the version the user added).
+    matches = services.db.find_by_name(track_text, artist_text)
+    for track in matches:
+        if track.track_id in state.playlist:
+            state.playlist.remove(track.track_id)
+            return Reply("Removed " + describe_track(track) + " from your playlist.")
+
+    safe_track = html.escape(track_text, quote=False)
+    return Reply("'" + safe_track + "' is not in your playlist.")
+
+
+def handle_clear(parsed, state, services):
+    """CLEAR: empty the playlist."""
+    count = len(state.playlist)
+    if count == 0:
+        return Reply("Your playlist is already empty.")
+
+    state.playlist = []
+    return Reply("Cleared your playlist (" + str(count) + " songs removed).")
