@@ -20,8 +20,11 @@ cd frontend && npm install && cd ..    # needs Node.js (tested with v24); only t
 - Run `build_db` again only if `musiccrs/db.py` or `musiccrs/build_db.py` changes.
 - **LLM key (needed from T3 on; slash commands work without it).** The course LLM is Gemma 4 31B on
   Open WebUI. Register at <https://openwebui.ux.uis.no> with your student number, then go to
-  Settings -> Account and generate an API key. Put it in `LLM_API_KEY` in `musiccrs/musiccrs.py`
-  (and in `simulation/config.py` for the simulator) **only on your machine, never commit it**.
+  Settings -> Account and generate an API key. The agent reads it from the `LLM_API_KEY`
+  environment variable, set in the backend terminal before starting it:
+  `export LLM_API_KEY="sk-..."` (Git Bash) or `$env:LLM_API_KEY = "sk-..."` (PowerShell).
+  Without it, the agent prints a warning and runs with slash commands only. The simulator still
+  needs the key in `simulation/config.py` **only on your machine, never commit it**.
 
 ---
 
