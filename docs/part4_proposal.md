@@ -115,7 +115,7 @@ into slides or a report.
 
 ## Links to the evaluation lecture (M12b)
 
-- **No LLM judge for F3.** Grading our explanations with the same Llama that wrote them is the
+- **No LLM judge for F3.** Grading our explanations with the same LLM that wrote them is the
   "circularity trap" (M12b, slide 23). F5 uses measures that need no LLM.
 - **If the lecturers ask for user evaluation.** A small study with 5 participants and the
   System Usability Scale (SUS; Brooke, 1996; M12b, slides 13–14) is the fallback. It is not

@@ -12,7 +12,7 @@
 
 ### 1.1 The starter agent ([musiccrs/musiccrs.py](../musiccrs/musiccrs.py))
 
-- `MusicCRS(Agent)`: `__init__(use_llm=True)` creates an `ollama.Client` (host `https://ollama.ux.uis.no`, model `llama3.3:70b`, key placeholder) and `self._playlist = []`.
+- `MusicCRS(Agent)`: `__init__(use_llm=True)` creates an `openai.OpenAI` client (base URL `https://openwebui.ux.uis.no/api`, model `gorina10.gemma-4-31b`, key placeholder `LLM_API_KEY`) and `self._playlist = []`.
 - `receive_utterance(utterance)` (line 52) is a chain of `if utterance.text.startswith(...)` for `/info`, `/ask_llm`, `/options`, `/quit`. Every reply goes out through `self._dialogue_connector.register_agent_utterance(AnnotatedUtterance(text, participant=AGENT, dialogue_acts=[...]))`.
 - `/options` shows how structured data reaches the UI: a `DialogueAct(intent=Intent("OPTIONS"), annotations=[SlotValueAnnotation("option", ...)])`. The frontend turns these into clickable quick replies.
 - `if __name__ == "__main__"` calls `platform.start()` **twice** (lines 137–138). That's harmless but should be cleaned up in T2.
@@ -57,7 +57,7 @@ T5 adds the playlist panel **beside** `ChatBox` and reads the same `onMessage` s
 
 - Only `simulation/config.py` may be edited (the source is integrity-checked).
 - `COMMANDS` maps fixed intent keys to **our** commands. The current values are the defaults: `ADD_TRACK: "/add [artist]: [track]"`, `REMOVE_TRACK: "/del [artist]: [track]"`, `RECOMMEND: "/recommend"`, `SHOW_PLAYLIST: "/list"`, `GREETING: "Hello!"`, `QUIT: "/quit"`.
-- It runs scripted dialogues and persona-based NL dialogues. **The uploaded dialogues are graded. Only the last upload counts.** It needs `GROUP_ID`, `UPLOAD_TOKEN` (by email) and our Ollama key. **Never commit the real token or key.**
+- It runs scripted dialogues and persona-based NL dialogues. **The uploaded dialogues are graded. Only the last upload counts.** It needs `GROUP_ID`, `UPLOAD_TOKEN` (by email) and our Open WebUI key (`LLM_API_KEY`). **Never commit the real token or key.**
 
 ### 1.6 Part 1 code the agent reuses
 
@@ -190,7 +190,7 @@ Handler = Callable[[ParsedIntent, DialogueState, "Services"], Reply]
 class Services:                     # created once in main, shared by every agent
     db: TrackDB
     retriever: FinalRetriever
-    llm: ollama.Client | None
+    llm: openai.OpenAI | None
 ```
 
 - `musiccrs.py` keeps `HANDLERS: dict[str, Handler]` (today: ADD, REMOVE, SHOW, CLEAR). `receive_utterance` = `parse_command` (T3: `parse`) → `QUIT` ends the chat → `HANDLERS[parsed.name](...)`, or a fallback reply listing the commands → send the reply with a **`PLAYLIST` act** added when the playlist changed or the intent is `SHOW`.
@@ -390,7 +390,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 | SELECT | 1–2 | — | ≈ 2 calls |
 
 - Startup: catalog + BM25 index + embeddings + the Qwen3 model take several seconds, **once**. This is fine.
-- If one Llama-3.3-70B call already takes > 2 s, add rule-based shortcuts for the common phrasings ("show my playlist", "clear it") before the LLM.
+- If one Gemma 4 31B call already takes > 2 s, add rule-based shortcuts for the common phrasings ("show my playlist", "clear it") before the LLM.
 
 ---
 
@@ -434,7 +434,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 1. The presentation slot on Oct 28 (Part 3 is also due that day). Book early: few slots, no rebooking.
 2. The exact JSON key names of a dialogue-act annotation in the socket message (§1.3).
 3. ~~The unit of `duration` and its mean~~ — resolved Oct 15: milliseconds, mean 239.7 s (§2).
-4. Ollama key works; the latency of one Llama-3.3-70B call from our network.
+4. Open WebUI key works; the latency of one Gemma 4 31B call from our network.
 5. Whether `rapidfuzz` is worth a new dependency, or FTS5 + `difflib` is enough.
 6. Which phrasings the simulator's persona dialogues actually use (read the first `--no-upload` run).
 7. R8: replace the current playlist, or propose and ask? (decide in T9).

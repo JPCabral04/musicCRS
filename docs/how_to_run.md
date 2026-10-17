@@ -18,6 +18,10 @@ cd frontend && npm install && cd ..    # needs Node.js (tested with v24); only t
 
 - `build_db` downloads the catalog from Hugging Face the first time (internet needed once).
 - Run `build_db` again only if `musiccrs/db.py` or `musiccrs/build_db.py` changes.
+- **LLM key (needed from T3 on; slash commands work without it).** The course LLM is Gemma 4 31B on
+  Open WebUI. Register at <https://openwebui.ux.uis.no> with your student number, then go to
+  Settings -> Account and generate an API key. Put it in `LLM_API_KEY` in `musiccrs/musiccrs.py`
+  (and in `simulation/config.py` for the simulator) **only on your machine, never commit it**.
 
 ---
 

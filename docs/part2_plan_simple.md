@@ -73,7 +73,7 @@ user message
 2. **Only catalog songs** can be added or recommended (47,071 tracks).
 3. **Load everything once** at startup (catalog, DB, retriever). Never load inside a reply.
 4. **Session rules from Part 1 are switches** (`SessionPolicy`): R6 never re-recommends songs already in the playlist; "something different" turns the same-artist signal off.
-5. **Never commit** the Ollama API key or the simulator upload token.
+5. **Never commit** the Open WebUI API key or the simulator upload token.
 6. **Everything ends up in `main`** (the spec requires one branch).
 
 ---
@@ -183,6 +183,6 @@ python simulation/simulator.py                   # final run, uploads
 ## 7. Still to find out
 
 - **The presentation date:** book an Oct 28 slot early (few slots, no rebooking). Part 3 is also due Oct 28, so check that both fit.
-- **Ollama key:** does the key work at `https://ollama.ux.uis.no`, and how long does one call take?
+- **LLM key:** does the Open WebUI key work at `https://openwebui.ux.uis.no` (Gemma 4 31B), and how long does one call take?
 - **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense.
 - **Simulator:** which slash commands does it really send? Check its first `--no-upload` run before Oct 21.
