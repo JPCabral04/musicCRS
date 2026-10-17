@@ -15,3 +15,29 @@ class DialogueState:
 
     # What the pending options are: "disambiguation", "recommendation", or None.
     pending_kind: str = None
+
+
+@dataclass
+class ParsedIntent:
+    """What the user wants: the intent name plus its slots.
+
+    "/add nirvana: smells like teen spirit"
+        -> ParsedIntent("ADD", {"artist": "nirvana", "track": "smells like teen spirit"})
+    """
+    name: str     # "ADD", "REMOVE", "SHOW", "CLEAR", "RECOMMEND", "HELP", "QUIT", "UNKNOWN", ...
+    slots: dict = field(default_factory=dict)
+
+
+@dataclass
+class Reply:
+    """What a handler sends back: the text, plus any dialogue acts (e.g. OPTIONS)."""
+    text: str
+    dialogue_acts: list = field(default_factory=list)
+
+
+@dataclass
+class Services:
+    """Heavy objects, created once at startup and shared by every agent (every tab)."""
+    db: object          # TrackDB (T1)
+    retriever: object   # FinalRetriever (from T4; None until then)
+    llm: object         # ollama.Client, or None when the agent runs without an LLM
