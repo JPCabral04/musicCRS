@@ -17,7 +17,9 @@ from dialoguekit.participant.participant import DialogueParticipant
 from dialoguekit.platforms import FlaskSocketPlatform
 
 from .db import TrackDB
-from .state import DialogueState, Services
+from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
+from .nlu import parse_command
+from .state import DialogueState, ParsedIntent, Reply, Services
 
 OLLAMA_HOST = "https://ollama.ux.uis.no"
 OLLAMA_MODEL = "llama3.3:70b"
@@ -25,6 +27,19 @@ OLLAMA_API_KEY = "SET YOUR API KEY HERE"
 
 _INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
+
+# Intent name -> handler function. Every handler is handler(parsed, state, services) -> Reply.
+# Each new task adds its own lines (RECOMMEND in T4, HELP in T12, ...).
+HANDLERS = {
+    "ADD": handle_add,
+    "REMOVE": handle_remove,
+    "SHOW": handle_show,
+    "CLEAR": handle_clear,
+}
+
+# Shown when the agent cannot handle a message (until the HELP handler of T12 exists).
+COMMANDS_TEXT = ("You can use: /add artist: track, /del artist: track, "
+                 "/list, /clear, /quit.")
 
 # The heavy objects (DB, retriever, LLM client), shared by every agent.
 # Set once in __main__ below, before the server accepts any connection.
@@ -104,83 +119,41 @@ class MusicCRS(Agent):
     def receive_utterance(self, utterance: Utterance) -> None:
         """Gets called each time there is a new user utterance.
 
-        For now the agent only understands specific command.
-
-        Args:
-            utterance: User utterance.
+        parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed.
         """
-        response = ""
-        dialogue_acts = []
-        if utterance.text.startswith("/info"):
-            response = self._info()
-        elif utterance.text.startswith("/ask_llm "):
-            prompt = utterance.text[9:]
-            response = self._ask_llm(prompt)
-        elif utterance.text.startswith("/options"):
-            options = [
-                "Play some jazz music",
-                "Recommend me some pop songs",
-                "Create a workout playlist",
-            ]
-            response = self._options(options)
-            dialogue_acts = [
-                DialogueAct(
-                    intent=_INTENT_OPTIONS,
-                    annotations=[
-                        SlotValueAnnotation("option", option) for option in options
-                    ],
-                )
-            ]
-        elif utterance.text == "/quit":
+        # 1. Understand the message. Slash commands only for now; T3 adds the LLM parser.
+        parsed = parse_command(utterance.text)
+        if parsed is None:
+            parsed = ParsedIntent("UNKNOWN", {"text": utterance.text})
+
+        if parsed.name == "QUIT":
             self.goodbye()
             return
+
+        # 2. Copy the playlist, to see afterwards whether the handler changed it.
+        playlist_before = list(self.state.playlist)
+
+        # 3. Run the handler for this intent, or a fallback reply.
+        if parsed.name in HANDLERS:
+            handler = HANDLERS[parsed.name]
+            reply = handler(parsed, self.state, self.services)
+        elif parsed.name == "UNKNOWN":
+            reply = Reply("Sorry, I did not understand that. " + COMMANDS_TEXT)
         else:
-            response = "I'm sorry, I don't understand that command."
+            reply = Reply("Sorry, I cannot do that yet. " + COMMANDS_TEXT)
+
+        # 4. Send the whole playlist to the panel when it changed, or when the user asked to see it.
+        dialogue_acts = list(reply.dialogue_acts)
+        playlist_changed = self.state.playlist != playlist_before
+        if playlist_changed or parsed.name == "SHOW":
+            dialogue_acts.append(playlist_act(self.state, self.services.db))
 
         self._dialogue_connector.register_agent_utterance(
             AnnotatedUtterance(
-                response,
+                reply.text,
                 participant=DialogueParticipant.AGENT,
                 dialogue_acts=dialogue_acts,
             )
-        )
-
-    # --- Response handlers ---
-
-    def _info(self) -> str:
-        """Gives information about the agent."""
-        return "I am MusicCRS, a conversational recommender system for music."
-
-    def _ask_llm(self, prompt: str) -> str:
-        """Calls a large language model (LLM) with the given prompt.
-
-        Args:
-            prompt: Prompt to send to the LLM.
-
-        Returns:
-            Response from the LLM.
-        """
-        if not self.services.llm:
-            return "The agent is not configured to use an LLM"
-
-        llm_response = self.services.llm.generate(
-            model=OLLAMA_MODEL,
-            prompt=prompt,
-            options={
-                "stream": False,
-                "temperature": 0.7,  # optional: controls randomness
-                "max_tokens": 100,  # optional: limits the length of the response
-            },
-        )
-
-        return f"LLM response: {llm_response['response']}"
-
-    def _options(self, options: list[str]) -> str:
-        """Presents options to the user."""
-        return (
-            "Here are some options:\n<ol>\n"
-            + "\n".join([f"<li>{option}</li>" for option in options])
-            + "</ol>\n"
         )
 
 
