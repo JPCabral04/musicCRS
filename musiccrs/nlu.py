@@ -1,4 +1,5 @@
 """Understanding the user's message (T2: slash commands by rules; T3 adds the LLM parser)."""
+from .llm import ask_json
 from .prompt import PROMPT_TEMPLATE
 from .state import ParsedIntent
 
@@ -7,9 +8,11 @@ INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
            "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "QUIT", "UNKNOWN")
 
 # Every slot name a ParsedIntent may carry. Frozen after T3.
-# track_id only comes from "/remove <id>"; the LLM never fills it.
+# Two of them are set by our code only, never by the LLM:
+#   track_id: from "/remove <id>" (the remove button of the playlist panel);
+#   text:     the user's own message, on UNKNOWN.
 SLOT_NAMES = ("track", "artist", "track_id", "question", "description", "selection",
-              "different", "topic")
+              "different", "topic", "text")
 
 # Allowed values of the "question" slot (R5, answered from the DB in T10).
 TRACK_QUESTIONS = ("artist", "album", "release_year", "duration")
@@ -207,13 +210,49 @@ def to_parsed_intent(data):
 
     slots = {}
     for name in raw_slots:
-        # Unknown slot names are dropped. track_id only ever comes from "/remove <id>".
+        # Unknown slot names are dropped, and so are the two slots only our code sets.
         if name not in SLOT_NAMES:
             continue
-        if name == "track_id":
+        if name == "track_id" or name == "text":
             continue
         value = clean_slot_value(name, raw_slots[name], intent_name)
         if value is not None:
             slots[name] = value
 
     return ParsedIntent(intent_name, slots)
+
+
+def parse(text, state, llm):
+    """Understand one user message: slash commands by rules, everything else by the LLM.
+
+    "/add nirvana: smells like teen spirit"
+        -> ParsedIntent("ADD", {"artist": "nirvana", "track": "smells like teen spirit"})  (no LLM)
+    "add hotel california by the eagles"
+        -> ParsedIntent("ADD", {"track": "hotel california", "artist": "the eagles"})    (1 LLM call)
+    "what's the weather?"
+        -> ParsedIntent("UNKNOWN", {"text": "what's the weather?"})
+    any free text when llm is None (no API key)
+        -> ParsedIntent("UNKNOWN", {"text": ...})
+    """
+    # 1. Slash commands (the simulator and the UI buttons): rules, no LLM.
+    parsed = parse_command(text)
+    if parsed is not None:
+        return parsed
+
+    # 2. Without an LLM client, free text cannot be understood.
+    if llm is None:
+        return ParsedIntent("UNKNOWN", {"text": text})
+
+    # 3. One LLM call (two if the first answer has no valid JSON).
+    #    The system message holds the rules; the user message is only the user's text.
+    system_message = {"role": "system", "content": build_prompt(state)}
+    user_message = {"role": "user", "content": text}
+    data = ask_json(llm, [system_message, user_message])
+
+    # 4. Keep only allowed intents and slots. A failed call (data is None) gives UNKNOWN.
+    parsed = to_parsed_intent(data)
+
+    # On UNKNOWN, keep the user's own words, as parse_command does for "/play".
+    if parsed.name == "UNKNOWN":
+        parsed.slots["text"] = text
+    return parsed
