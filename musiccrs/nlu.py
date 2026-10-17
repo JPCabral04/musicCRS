@@ -1,5 +1,23 @@
 """Understanding the user's message (T2: slash commands by rules; T3 adds the LLM parser)."""
+from .prompt import PROMPT_TEMPLATE
 from .state import ParsedIntent
+
+# Every intent the agent knows. Frozen after T3: the handlers are registered under these names.
+INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
+           "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "QUIT", "UNKNOWN")
+
+# Every slot name a ParsedIntent may carry. Frozen after T3.
+# track_id only comes from "/remove <id>"; the LLM never fills it.
+SLOT_NAMES = ("track", "artist", "track_id", "question", "description", "selection",
+              "different", "topic")
+
+# Allowed values of the "question" slot (R5, answered from the DB in T10).
+TRACK_QUESTIONS = ("artist", "album", "release_year", "duration")
+ARTIST_QUESTIONS = ("track_count", "top_track", "albums", "genres")
+
+# Allowed values of the "topic" slot of HELP (R3, T12): which feature the user asks about.
+HELP_TOPICS = ("add", "remove", "show", "clear", "questions", "recommend",
+               "create_playlist", "select")
 
 # Slash commands that take no argument: command -> intent name.
 SIMPLE_COMMANDS = {
@@ -90,3 +108,24 @@ def parse_command(text):
 
     # A slash command we do not know, e.g. "/play".
     return ParsedIntent("UNKNOWN", {"text": text})
+
+
+def build_prompt(state):
+    """The system prompt for the LLM parser, with this user's pending options filled in.
+
+    state.pending_kind None             -> "Pending options: none"
+    "recommendation", 5 pending options -> "Pending options: 5 recommended songs ..."
+    The LLM needs this to know whether "the second one" is a SELECT.
+    """
+    count = len(state.pending_options)
+    if state.pending_kind == "recommendation" and count > 0:
+        pending_text = (str(count) + " recommended songs were just shown; "
+                        "the user may pick some, all or none of them")
+    elif state.pending_kind == "disambiguation" and count > 0:
+        pending_text = (str(count) + " songs with the same name were just shown; "
+                        "the user should pick one of them")
+    else:
+        pending_text = "none"
+
+    prompt = PROMPT_TEMPLATE.replace("<PENDING>", pending_text)
+    return prompt
