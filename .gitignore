@@ -20,6 +20,9 @@ venv/
 # Caches (BM25 index, HF downloads)
 cache/
 
+# Conversations saved by DialogueKit when a chat ends
+dialogue_export/
+
 # Retrieval outputs
 predictions*.json
 ground_truth*.json

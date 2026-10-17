@@ -16,13 +16,14 @@ Install dependencies by running:
 pip install -r requirements.txt
 ```
 
-Then, start the server by running:
+Then, build the track database once and start the server from the repo root:
 
 ```bash
-python musiccrs/musiccrs.py
+python -m musiccrs.build_db     # once: writes cache/musiccrs.db
+python -m musiccrs.musiccrs     # run as a module, so the package imports work
 ```
 
-The server will be running on <http://127.0.0.1:5000>.
+The server will be running on <http://127.0.0.1:5000>. Step-by-step run and browser test: [docs/how_to_run.md](docs/how_to_run.md).
 
 Leave the terminal open to keep the server running. Open a new terminal window to set up and start the frontend.
 
