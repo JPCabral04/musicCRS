@@ -98,7 +98,7 @@ Each task: **what** → **file** → **done when**.
 ### Fri Oct 16
 
 **JP — T2. Agent skeleton.** Per-user state (playlist, pending options), a table from intent → handler function, slash commands (`/add artist: track`, `/del ...`, `/list`, `/clear`, `/recommend`, `/remove <id>`), and a `PLAYLIST` message after every change.
-→ `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add nirvana: smells like teen spirit` then `/list` works.
+→ `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add nirvana: smells like teen spirit` then `/list` works. **Done Oct 17** (also `musiccrs/nlu.py` with the slash rules, and simple exact-match handlers in `musiccrs/handlers_playlist.py` that Alejandro takes over in T7).
 
 **JP — T3. Intent parser.** One LLM call returns JSON: the intent plus its slots (track, artist, question type, description, selection). Slash commands skip the LLM.
 → `musiccrs/nlu.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.**
@@ -172,7 +172,7 @@ If a requirement still fails, fix it today. We get one attempt, so a full demo b
 ```bash
 conda activate musiccrs
 python -m musiccrs.build_db                      # once: builds cache/musiccrs.db
-python musiccrs/musiccrs.py                      # backend on :5000
+python -m musiccrs.musiccrs                      # backend on :5000 (as a module, from the repo root)
 cd frontend && npm start                         # frontend on :3000
 python simulation/simulator.py --no-upload       # needs the backend running
 python simulation/simulator.py                   # final run, uploads

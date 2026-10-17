@@ -37,7 +37,8 @@ The UI and the simulator receive each agent message as:
 ```
 
 - The **simulator reads only `text` and `dialogue_acts`** (`simulation/README.md`). Anything the UI shows beyond that (the playlist panel, buttons) is invisible to it.
-- The exact JSON key names of an annotation (`slot` / `value`) are **A VERIFICAR**. Print one message in the browser console in T5.
+- The JSON key names of an annotation are `slot` and `value` (checked in T2 in `dialoguekit/platforms/flask_socket_platform.py`, `Message.from_utterance`).
+- Run the agent from the repo root as a module: `python -m musiccrs.musiccrs` (since T2 it imports `.db`, `.state`, ...). DialogueKit saves every finished chat to `dialogue_export/` (gitignored).
 
 ### 1.4 The frontend path ([frontend/src/](../frontend/src/))
 
@@ -138,7 +139,9 @@ class TrackDB:
 - `musiccrs/build_db.py`: `python -m musiccrs.build_db` reads `MusicCatalogLoader().metadata_dict` and writes `cache/musiccrs.db` (`cache/` is gitignored). It is idempotent: it deletes the file and rebuilds.
 - Why SQLite: it is in the Python stdlib, it is one file, it does exact lookups by index in ms, and FTS5 handles partial names. The spec allows any database.
 
-### 3.2 `musiccrs/state.py` — T2
+### 3.2 `musiccrs/state.py` — T2 (done)
+
+All shared types live here, so handlers, `nlu.py` and `musiccrs.py` import them from one place (no circular imports).
 
 ```python
 @dataclass
@@ -146,18 +149,22 @@ class DialogueState:
     playlist: list[str] = field(default_factory=list)          # track IDs, in order
     pending_options: list[str] = field(default_factory=list)   # last shown list (R4 or R6/R8)
     pending_kind: str | None = None                            # "disambiguation" | "recommendation" | None
-```
-
-### 3.3 `musiccrs/nlu.py` — T3
-
-```python
-INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
-           "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "UNKNOWN")
 
 @dataclass
 class ParsedIntent:
-    name: str                      # one of INTENTS
-    slots: dict[str, str]          # track, artist, question, description, selection, ...
+    name: str                      # one of INTENTS (see §3.3)
+    slots: dict[str, str]          # track, artist, track_id, question, description, selection, ...
+```
+
+`Reply` and `Services` (§3.4) are in the same file.
+
+### 3.3 `musiccrs/nlu.py` — T2 rules, T3 LLM
+
+T2 added `split_artist_track(text)` (cut at the first `": "`) and `parse_command(text) -> ParsedIntent | None` (slash commands by rules; `None` when the text is not a slash command). T3 adds:
+
+```python
+INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
+           "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "QUIT", "UNKNOWN")
 
 def parse(text: str, state: DialogueState, llm) -> ParsedIntent:
     """Slash commands → parsed by rules, no LLM.
@@ -165,12 +172,13 @@ def parse(text: str, state: DialogueState, llm) -> ParsedIntent:
     and whether options are pending, so "the second one" becomes SELECT)."""
 ```
 
-- The slot names (frozen after T3): `track`, `artist`, `question` (one of the R5 types), `description` (R8), `selection` (the raw selection text for R7), `different` (bool, "something different").
+- The slot names (frozen after T3): `track`, `artist`, `track_id` (only from `/remove <id>`), `question` (one of the R5 types), `description` (R8), `selection` (the raw selection text for R7), `different` (bool, "something different").
 - If the LLM output is not valid JSON, retry once (so 2 calls at most), then return `UNKNOWN`.
 
-### 3.4 Handler contract and registry — T2
+### 3.4 Handler contract and registry — T2 (done)
 
 ```python
+# musiccrs/state.py
 @dataclass
 class Reply:
     text: str
@@ -185,14 +193,16 @@ class Services:                     # created once in main, shared by every agen
     llm: ollama.Client | None
 ```
 
-- `musiccrs.py` keeps `HANDLERS: dict[str, Handler]`. `receive_utterance` = `parse` → `HANDLERS[parsed.name](...)` → send the reply, then a **`PLAYLIST` act** whenever the playlist changed.
+- `musiccrs.py` keeps `HANDLERS: dict[str, Handler]` (today: ADD, REMOVE, SHOW, CLEAR). `receive_utterance` = `parse_command` (T3: `parse`) → `QUIT` ends the chat → `HANDLERS[parsed.name](...)`, or a fallback reply listing the commands → send the reply with a **`PLAYLIST` act** added when the playlist changed or the intent is `SHOW`.
+- `Services` is a module global built by `create_services()` in `__main__` before `platform.start()`; `retriever` is `None` until T4. The agent constructor is `MusicCRS(agent_id="MusicCRS")`.
+- T2 put simple exact-match versions of ADD / REMOVE / SHOW / CLEAR in `handlers_playlist.py` (most popular match, no resolver, no disambiguation); Alejandro replaces their bodies in T7/T8 and keeps the signatures. Text replies are HTML (the chat renders them), so names are passed through `html.escape(..., quote=False)`.
 - Each owner registers handlers from their own file: `handlers_playlist.py` (ADD, REMOVE, SHOW, CLEAR, HELP), `handlers_qa.py` (ASK_TRACK, ASK_ARTIST), `handlers_recs.py` (RECOMMEND, CREATE_PLAYLIST), `selection.py` (SELECT).
 
 ### 3.5 Dialogue acts (the UI and the simulator contract)
 
 | Intent | Annotations | Sent when |
 | --- | --- | --- |
-| `PLAYLIST` | one `SlotValueAnnotation("track", json.dumps({"id", "name", "artist"}))` per track, in order | after any change, and on `SHOW` |
+| `PLAYLIST` | one `SlotValueAnnotation("track", json.dumps({"id", "name", "artist", "duration_ms"}))` per track, in order (`artist` = main artist); empty playlist → no annotations. Names are **not** HTML-escaped: the panel must render them as plain text, not with `dangerouslySetInnerHTML` | after any change, and on `SHOW` (`playlist_act()` in `musiccrs.py`) |
 | `OPTIONS` (existing) | `SlotValueAnnotation("option", "<n>. <name> — <artist>")` | R4 choices, R6 recommendations |
 
 ### 3.6 Slash commands (T2, matched in `simulation/config.py` by T13)
@@ -240,6 +250,8 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 - Notes: §1.2 (singletons in `main`), §3.2, §3.4, §3.6. Remove the double `platform.start()`. Keep `/quit` and the welcome message. The welcome message mentions "type help".
 - LLM calls: 0 (slash path).
 - Done when: `/add nirvana: smells like teen spirit`, `/list`, `/del nirvana: smells like teen spirit`, `/clear` work in the browser and each sends a `PLAYLIST` act.
+- Result (Oct 17): done, checked with a socket.io client (the browser's channel). Each command replies with a `PLAYLIST` act (empty after `/clear`); a failed `/add` sends none; `/recommend` and free text get a fallback that lists the commands; two clients at once keep separate playlists. Files: `state.py`, `nlu.py` (`parse_command`), `handlers_playlist.py` (simple versions), `musiccrs.py`.
+- Known limits, left to T6/T7: exact names only (`/add bohemian rhapsody by queen` is not found, "by" is not parsed); several matches → the most popular is added (`/add bohemian rhapsody` adds Queen's "Operatic Section / 2011 A Cappella Mix").
 
 ### T3 — Intent parser · **JP** · Fri Oct 16
 

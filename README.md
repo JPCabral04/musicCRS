@@ -16,10 +16,11 @@ Install dependencies by running:
 pip install -r requirements.txt
 ```
 
-Then, start the server by running:
+Then, build the track database once and start the server from the repo root:
 
 ```bash
-python musiccrs/musiccrs.py
+python -m musiccrs.build_db     # once: writes cache/musiccrs.db
+python -m musiccrs.musiccrs     # run as a module, so the package imports work
 ```
 
 The server will be running on <http://127.0.0.1:5000>.
