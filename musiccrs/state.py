@@ -40,4 +40,4 @@ class Services:
     """Heavy objects, created once at startup and shared by every agent (every tab)."""
     db: object          # TrackDB (T1)
     retriever: object   # FinalRetriever (from T4; None until then)
-    llm: object         # ollama.Client, or None when the agent runs without an LLM
+    llm: object         # openai.OpenAI, or None when the agent runs without an LLM
