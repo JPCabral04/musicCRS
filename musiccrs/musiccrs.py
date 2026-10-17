@@ -1,5 +1,7 @@
 """MusicCRS conversational agent."""
 
+import json
+
 import ollama
 from dialoguekit.core.annotated_utterance import AnnotatedUtterance
 from dialoguekit.core.dialogue_act import DialogueAct
@@ -15,6 +17,29 @@ OLLAMA_MODEL = "llama3.3:70b"
 OLLAMA_API_KEY = "SET YOUR API KEY HERE"
 
 _INTENT_OPTIONS = Intent("OPTIONS")
+_INTENT_PLAYLIST = Intent("PLAYLIST")
+
+
+def playlist_act(state, db):
+    """The whole playlist as one PLAYLIST dialogue act, for the playlist panel (R1).
+
+    One annotation per track, in playlist order. Its value is JSON text:
+    SlotValueAnnotation("track", '{"id": "e9383e0c-...", "name": "Smells Like Teen Spirit",
+                                   "artist": "Nirvana", "duration_ms": 301920}')
+    An empty playlist gives an act with no annotations, so the panel shows nothing.
+    """
+    annotations = []
+    for track_id in state.playlist:
+        track = db.get(track_id)
+        track_info = {
+            "id": track.track_id,
+            "name": track.name,
+            "artist": track.artists[0],
+            "duration_ms": track.duration_ms,
+        }
+        value = json.dumps(track_info)
+        annotations.append(SlotValueAnnotation("track", value))
+    return DialogueAct(intent=_INTENT_PLAYLIST, annotations=annotations)
 
 
 class MusicCRS(Agent):
