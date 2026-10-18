@@ -18,8 +18,8 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from .db import TrackDB
 from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
 from .llm import create_client
-from .nlu import parse_command
-from .state import DialogueState, ParsedIntent, Reply, Services
+from .nlu import parse
+from .state import DialogueState, Reply, Services
 
 _INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
@@ -116,10 +116,8 @@ class MusicCRS(Agent):
 
         parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed.
         """
-        # 1. Understand the message. Slash commands only for now; T3 adds the LLM parser.
-        parsed = parse_command(utterance.text)
-        if parsed is None:
-            parsed = ParsedIntent("UNKNOWN", {"text": utterance.text})
+        # 1. Understand the message: slash commands by rules, other text by one LLM call.
+        parsed = parse(utterance.text, self.state, self.services.llm)
 
         if parsed.name == "QUIT":
             self.goodbye()
