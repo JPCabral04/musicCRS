@@ -373,11 +373,11 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 | Tue Oct 13 | send the plan | run backend + frontend, read the code | — |
 | Thu Oct 15 | T1 database → PR | T5 panel with a fake `PLAYLIST` | `cache/musiccrs.db` |
 | Fri Oct 16 | T2 skeleton, T3 parser → PR, **freeze** | review T1, T6 resolver | slash commands work |
-| Sat Oct 17 | T4 R6 | T7 R2 | NL add/remove/view/clear |
-| Sun Oct 18 | T9 R8 | T8 R4 | |
-| Mon Oct 19 | T11 R7 (start) | T10 R5 (start) | |
-| Tue Oct 20 | T11 R7 (finish) | T10 R5, T12 R3, finish T5 | all R1–R8 in branches |
-| Wed Oct 21 | **sync**: run each other's code; T13 simulator `--no-upload` | **sync** | everything in `main` |
+| Sat Oct 17 | T3 parser (took until Mon) | T7 R2 | NL add/remove/view/clear |
+| Sun Oct 18 | T3 parser | T8 R4 | |
+| Mon Oct 19 | T3 → PR #10; T4 R6 | T10 R5 (start) | |
+| Tue Oct 20 | T11 R7 (before T9: T8 uses `select_indices`) | T10 R5, T12 R3, finish T5 | all R1–R8 in branches except R8 |
+| Wed Oct 21 | T9 R8 (morning); **sync**: run each other's code; T13 simulator `--no-upload` | **sync** | everything in `main` |
 | Thu Oct 22 – Fri Oct 23 | fix what the simulator found | T14 demo script + README | buffer |
 | Sat Oct 24 – Mon Oct 26 | rehearse, mock exam, final upload | rehearse, mock exam | |
 | Tue Oct 27 | go / no-go | go / no-go | |

@@ -108,7 +108,7 @@ Each task: **what** → **file** → **done when**.
 
 ### Sat Oct 17 – Tue Oct 20
 
-Suggested order: JP T4 (Sat), T9 (Sun), T11 (Mon–Tue). Alejandro T7 (Sat), T8 (Sun), T10 (Mon–Tue), T12 and T5 finish (Tue).
+Suggested order (JP's updated Oct 19, after T3 took until Mon): JP **T4 (Mon) → T11 (Tue) → T9 (Wed, before the sync; Thu buffer) → T13 at the sync**. T11 moves before T9 because Alejandro's T8 ("the second one") uses T11's `select_indices`, and T11 is tested on T4's recommendations. Alejandro T7 (Sat), T8 (Sun), T10 (Mon–Tue), T12 and T5 finish (Tue).
 
 **JP — T4. R6 recommend.** Pass the playlist to `FinalRetriever` as the "played tracks" and return 5 songs that are not in the playlist. Save them as pending options for T11.
 → `musiccrs/handlers_recs.py` → done when a playlist of 3 rock songs gives 5 related songs, not just popular ones.
