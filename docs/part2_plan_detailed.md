@@ -158,22 +158,30 @@ class ParsedIntent:
 
 `Reply` and `Services` (§3.4) are in the same file.
 
-### 3.3 `musiccrs/nlu.py` — T2 rules, T3 LLM
+### 3.3 `musiccrs/nlu.py` — T2 rules, T3 LLM (frozen Oct 19)
 
 T2 added `split_artist_track(text)` (cut at the first `": "`) and `parse_command(text) -> ParsedIntent | None` (slash commands by rules; `None` when the text is not a slash command). T3 adds:
 
 ```python
 INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
            "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "QUIT", "UNKNOWN")
+SLOT_NAMES = ("track", "artist", "track_id", "question", "description", "selection",
+              "different", "topic", "text")
+TRACK_QUESTIONS = ("artist", "album", "release_year", "duration")
+ARTIST_QUESTIONS = ("track_count", "top_track", "albums", "genres")
+HELP_TOPICS = ("add", "remove", "show", "clear", "questions", "recommend",
+               "create_playlist", "select")
 
 def parse(text: str, state: DialogueState, llm) -> ParsedIntent:
-    """Slash commands → parsed by rules, no LLM.
-    Otherwise one LLM call with a JSON-only prompt (intents, slot names, few-shot examples,
-    and whether options are pending, so "the second one" becomes SELECT)."""
+    """Slash commands → parsed by rules, no LLM. No LLM client → UNKNOWN.
+    Otherwise one LLM call (system prompt from build_prompt(state) + the user's text),
+    then to_parsed_intent() keeps only allowed intents, slots and values."""
 ```
 
-- The slot names (frozen after T3): `track`, `artist`, `track_id` (only from `/remove <id>`), `question` (one of the R5 types), `description` (R8), `selection` (the raw selection text for R7), `different` (bool, "something different").
-- If the LLM output is not valid JSON, retry once (so 2 calls at most), then return `UNKNOWN`.
+- Slots: `track`, `artist` (as the user wrote them; the resolver finds the real track), `question` (one of the 8 R5 types above, checked against *its* intent), `description` (R8), `selection` (the raw selection text for R7), `different` (only present when true), `topic` (R3, one of `HELP_TOPICS`; absent for general help). Set **only by our code**, dropped if the LLM sends them: `track_id` (from `/remove <id>`) and `text` (the user's message, on `UNKNOWN`).
+- `ASK_TRACK` / `ASK_ARTIST` with a question outside the list keep the intent but lose the `question` slot: the T10 handler must handle a missing question.
+- The prompt lives in `musiccrs/prompt.py` (intents, slot rules, a `Pending options:` line, 8 scope rules against off-topic requests and prompt injection, 18 few-shot examples). Its lists must match the tuples above.
+- LLM helpers in `musiccrs/llm.py`, reusable by T9 and T11: `create_client()` (key from the `LLM_API_KEY` environment variable, `None` without it, `max_retries=0`), `extract_json(text)`, `ask_json(llm, messages)` (temperature 0, 5 s timeout; no valid JSON → the model sees its answer and is asked once more, so 2 calls at most; API error → `None`).
 
 ### 3.4 Handler contract and registry — T2 (done)
 
@@ -255,10 +263,11 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 
 ### T3 — Intent parser · **JP** · Fri Oct 16
 
-- Files: `musiccrs/nlu.py`, `musiccrs/nlu_examples.json` (≥ 2 sentences per intent, with the expected parse).
+- Files: `musiccrs/llm.py`, `musiccrs/prompt.py`, `musiccrs/nlu.py`, `musiccrs/musiccrs.py`, `musiccrs/nlu_examples.json` (37 sentences, ≥ 2 per intent, with the expected parse), `musiccrs/check_nlu.py`.
 - Notes: §3.3. Low temperature (0). Ask for JSON only. Include `pending_kind` in the prompt.
 - LLM calls: 1 (2 with a retry).
-- Done when: `python -m musiccrs.nlu --check` parses ≥ 90% of `nlu_examples.json` correctly and prints the ms per call. **Then the interfaces are frozen.**
+- Done when: `python -m musiccrs.check_nlu` parses ≥ 90% of `nlu_examples.json` correctly and prints the ms per call. **Then the interfaces are frozen.**
+- Result (Oct 19): **37/37 (100%)**, ms per parse mean 447, max 895 (Gemma 4 31B on Open WebUI). Interfaces frozen. The check compares `track`/`artist` after `normalize`, `description`/`selection` by presence only, other slots exactly, and counts an extra slot as a failure. The sentences were written by us, so 100% here does not promise 100% on real users; the simulator run (T13) is the next test.
 
 ### T4 — R6 recommend · **JP** · Sat Oct 17
 
@@ -378,7 +387,7 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 
 ## 7. Latency and LLM budget per intent
 
-Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFICAR** (T13 measures them).
+Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFICAR** (T13 measures them). Measured in T3 (Oct 19): one parser call takes 0.3–0.9 s (mean 0.45 s), so rule-based shortcuts are not needed.
 
 | Intent | LLM calls | Other cost | Expected |
 | --- | --- | --- | --- |

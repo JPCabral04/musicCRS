@@ -14,16 +14,12 @@ from dialoguekit.core.utterance import Utterance
 from dialoguekit.participant.agent import Agent
 from dialoguekit.participant.participant import DialogueParticipant
 from dialoguekit.platforms import FlaskSocketPlatform
-from openai import OpenAI
 
 from .db import TrackDB
 from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
-from .nlu import parse_command
-from .state import DialogueState, ParsedIntent, Reply, Services
-
-LLM_BASE_URL = "https://openwebui.ux.uis.no/api"
-LLM_MODEL = "gorina10.gemma-4-31b"
-LLM_API_KEY = "SET YOUR API KEY HERE"
+from .llm import create_client
+from .nlu import parse
+from .state import DialogueState, Reply, Services
 
 _INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
@@ -52,7 +48,9 @@ def create_services(use_llm=True):
 
     llm = None
     if use_llm:
-        llm = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
+        llm = create_client()
+        if llm is None:
+            print("LLM_API_KEY is not set: the agent runs with slash commands only.")
 
     # The retriever (FinalRetriever) is added in T4.
     return Services(db=db, retriever=None, llm=llm)
@@ -118,10 +116,8 @@ class MusicCRS(Agent):
 
         parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed.
         """
-        # 1. Understand the message. Slash commands only for now; T3 adds the LLM parser.
-        parsed = parse_command(utterance.text)
-        if parsed is None:
-            parsed = ParsedIntent("UNKNOWN", {"text": utterance.text})
+        # 1. Understand the message: slash commands by rules, other text by one LLM call.
+        parsed = parse(utterance.text, self.state, self.services.llm)
 
         if parsed.name == "QUIT":
             self.goodbye()
