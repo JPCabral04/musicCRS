@@ -101,7 +101,7 @@ Each task: **what** → **file** → **done when**.
 → `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add nirvana: smells like teen spirit` then `/list` works. **Done Oct 17** (also `musiccrs/nlu.py` with the slash rules, and simple exact-match handlers in `musiccrs/handlers_playlist.py` that Alejandro takes over in T7).
 
 **JP — T3. Intent parser.** One LLM call returns JSON: the intent plus its slots (track, artist, question type, description, selection). Slash commands skip the LLM.
-→ `musiccrs/nlu.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.**
+→ `musiccrs/nlu.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.** **Done Oct 19:** 37/37 sentences correct, 0.45 s per LLM call on average (`python -m musiccrs.check_nlu`). Also `musiccrs/llm.py` (LLM client, key from the `LLM_API_KEY` environment variable) and `musiccrs/prompt.py`. Slot names and the 8 question types: detailed plan §3.3.
 
 **Alejandro — T6. Track resolver.** Given a name (and maybe an artist), return the matching tracks: exact normalized match first, then fuzzy.
 → `musiccrs/resolver.py` → done when "its my life", "IT'S MY LIFE!" and "it's my life by bon jovi" all find the Bon Jovi track.
