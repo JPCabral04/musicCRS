@@ -5,6 +5,7 @@ Run from the repo root as a module (so the package imports work):
 """
 
 import json
+import time
 
 from dialoguekit.core.annotated_utterance import AnnotatedUtterance
 from dialoguekit.core.dialogue_act import DialogueAct
@@ -14,6 +15,8 @@ from dialoguekit.core.utterance import Utterance
 from dialoguekit.participant.agent import Agent
 from dialoguekit.participant.participant import DialogueParticipant
 from dialoguekit.platforms import FlaskSocketPlatform
+
+from retrieval.final_retriever import FinalRetriever
 
 from .db import TrackDB
 from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
@@ -52,8 +55,14 @@ def create_services(use_llm=True):
         if llm is None:
             print("LLM_API_KEY is not set: the agent runs with slash commands only.")
 
-    # The retriever (FinalRetriever) is added in T4.
-    return Services(db=db, retriever=None, llm=llm)
+    # The Part 1 retriever (BM25, same artist, BPR, dense): loaded once, it takes seconds.
+    print("Loading the retriever...")
+    start = time.perf_counter()
+    retriever = FinalRetriever()
+    seconds = time.perf_counter() - start
+    print("Retriever loaded in " + str(round(seconds, 1)) + " s.")
+
+    return Services(db=db, retriever=retriever, llm=llm)
 
 
 def playlist_act(state, db):
