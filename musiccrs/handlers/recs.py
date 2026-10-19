@@ -9,9 +9,9 @@ from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
 
 from retrieval.context import SessionPolicy, TurnContext
 
-from .data.db import normalize
-from .handlers_playlist import describe_track
-from .state import Reply
+from ..data.db import normalize
+from .playlist import describe_track
+from ..state import Reply
 
 # How many songs R6 shows (the spec asks for 3-5).
 NUM_RECOMMENDATIONS = 5

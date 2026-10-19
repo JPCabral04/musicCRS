@@ -6,7 +6,7 @@ Alejandro takes this file over in T7 (track resolver, refusal messages) and T8
 """
 import html
 
-from .state import Reply
+from ..state import Reply
 
 
 def describe_track(track):

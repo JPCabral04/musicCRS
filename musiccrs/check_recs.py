@@ -11,7 +11,7 @@ Then it prints the ms per call. Exits with code 1 if a check fails.
 import sys
 import time
 
-from .handlers_recs import NUM_RECOMMENDATIONS, handle_recommend, playlist_artists
+from .handlers.recs import NUM_RECOMMENDATIONS, handle_recommend, playlist_artists
 from .data.db import normalize
 from .musiccrs import create_services
 from .state import DialogueState, ParsedIntent
