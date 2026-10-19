@@ -19,7 +19,7 @@ pip install -r requirements.txt
 Then, build the track database once and start the server from the repo root:
 
 ```bash
-python -m musiccrs.build_db     # once: writes cache/musiccrs.db
+python -m musiccrs.data.build_db     # once: writes cache/musiccrs.db
 python -m musiccrs.musiccrs     # run as a module, so the package imports work
 ```
 
