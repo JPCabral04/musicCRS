@@ -1,8 +1,12 @@
-"""Recommendation handlers: RECOMMEND (R6), and later CREATE_PLAYLIST (R8, T9).
+"""Recommendation handlers: RECOMMEND (R6, T4) and CREATE_PLAYLIST (R8, T9).
 
 R6 reuses the Part 1 FinalRetriever: the playlist plays the role of the tracks
 already played in a dataset session.
+R8 turns the description into a search query and a duration (one LLM call), the duration
+into a number of songs (playlist_length), and searches with text_to_item_retrieval.
 """
+import html
+
 from dialoguekit.core.dialogue_act import DialogueAct
 from dialoguekit.core.intent import Intent
 from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
@@ -12,6 +16,7 @@ from retrieval.context import SessionPolicy, TurnContext
 from ..data.db import normalize
 from ..llm import ask_json
 from .playlist import describe_track
+from .selection import clear_pending
 from ..state import Reply
 
 # How many songs R6 shows (the spec asks for 3-5).
@@ -241,3 +246,47 @@ def plan_playlist(description, llm):
         minutes = llm_minutes
 
     return query, minutes
+
+
+def handle_create_playlist(parsed, state, services):
+    """CREATE_PLAYLIST (R8): a new playlist from a description. It replaces the current one."""
+    if "description" not in parsed.slots:
+        return Reply("What kind of playlist should I make? For example: "
+                     "'sad love songs' or 'energetic music for the gym'.")
+    description = parsed.slots["description"]
+
+    # "energetic music for the gym" -> ("energetic upbeat gym workout high tempo", 60) -> 15 songs
+    query, minutes = plan_playlist(description, services.llm)
+    length = playlist_length(minutes)
+
+    # No played tracks here, so only bm25_plus and dense search the query.
+    track_ids = services.retriever.text_to_item_retrieval(query, length)
+    if len(track_ids) == 0:
+        return Reply("Sorry, I could not find songs for that description. "
+                     "Try other words, for example 'sad love songs'.")
+
+    # The new playlist replaces the old one (decided in T9); the reply says so below.
+    old_length = len(state.playlist)
+    state.playlist = track_ids
+    # Options shown earlier (R6, R4) do not belong to this playlist any more.
+    clear_pending(state)
+
+    tracks = []
+    total_ms = 0
+    for track_id in track_ids:
+        track = services.db.get(track_id)
+        tracks.append(track)
+        total_ms = total_ms + track.duration_ms
+    total_minutes = round(total_ms / 60000)
+
+    text = ("Here is a playlist for '" + html.escape(description, quote=False) + "': "
+            + str(len(tracks)) + " songs, about " + str(total_minutes) + " minutes "
+            + "(I aimed for about " + str(round(minutes)) + " minutes).\n<ol>\n")
+    for track in tracks:
+        text = text + "<li>" + describe_track(track) + "</li>\n"
+    text = text + "</ol>\n"
+    if old_length > 0:
+        text = text + "It replaced your previous playlist of " + str(old_length) + " songs.\n"
+    text = text + "You can add or remove songs, or ask me to recommend more."
+
+    return Reply(text)
