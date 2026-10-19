@@ -9,11 +9,16 @@ from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
 
 from retrieval.context import SessionPolicy, TurnContext
 
+from .db import normalize
 from .handlers_playlist import describe_track
 from .state import Reply
 
 # How many songs R6 shows (the spec asks for 3-5).
 NUM_RECOMMENDATIONS = 5
+
+# "Something different": how many candidates to fetch before the playlist's artists
+# are filtered out (most of the top ones can be by those artists).
+NUM_CANDIDATES_DIFFERENT = 50
 
 _INTENT_OPTIONS = Intent("OPTIONS")
 
@@ -61,6 +66,42 @@ def options_act(tracks):
     return DialogueAct(intent=_INTENT_OPTIONS, annotations=annotations)
 
 
+def playlist_artists(playlist, db):
+    """The normalized names of every artist in the playlist.
+
+    [Smells Like Teen Spirit, It's My Life] -> {"nirvana", "bon jovi"}
+    """
+    artists = set()
+    for track_id in playlist:
+        track = db.get(track_id)
+        for artist in track.artists:
+            artists.add(normalize(artist))
+    return artists
+
+
+def drop_playlist_artists(candidate_ids, playlist, db, limit):
+    """The first `limit` candidates that share no artist with the playlist.
+
+    Playlist by Nirvana and Bon Jovi: ["Come As You Are" (Nirvana), "Yellow" (Coldplay), ...]
+    -> ["Yellow", ...]
+    """
+    artists_to_avoid = playlist_artists(playlist, db)
+    kept = []
+    for track_id in candidate_ids:
+        track = db.get(track_id)
+
+        shares_an_artist = False
+        for artist in track.artists:
+            if normalize(artist) in artists_to_avoid:
+                shares_an_artist = True
+
+        if not shares_an_artist:
+            kept.append(track_id)
+        if len(kept) == limit:
+            break
+    return kept
+
+
 def handle_recommend(parsed, state, services):
     """RECOMMEND (R6): 5 songs related to the playlist, none already in it."""
     if len(state.playlist) == 0:
@@ -70,10 +111,23 @@ def handle_recommend(parsed, state, services):
                      "Add a few songs first, or ask me to make a playlist for you "
                      "(for example: 'make me a playlist for the gym').")
 
-    # Default policy: songs already in the playlist are never recommended.
+    # The parser sets the "different" slot only when it is true
+    # ("recommend something different, not the same artists").
+    different = False
+    if "different" in parsed.slots:
+        different = True
+
     ctx = recommend_context(state.playlist)
-    policy = SessionPolicy()
-    track_ids = services.retriever.retrieve(ctx, NUM_RECOMMENDATIONS, policy)
+    if different:
+        # Same-artist list off, then the playlist's artists are left out of the result.
+        policy = SessionPolicy(use_same_artist=False)
+        candidate_ids = services.retriever.retrieve(ctx, NUM_CANDIDATES_DIFFERENT, policy)
+        track_ids = drop_playlist_artists(candidate_ids, state.playlist, services.db,
+                                          NUM_RECOMMENDATIONS)
+    else:
+        # Default policy: songs already in the playlist are never recommended.
+        policy = SessionPolicy()
+        track_ids = services.retriever.retrieve(ctx, NUM_RECOMMENDATIONS, policy)
 
     if len(track_ids) == 0:
         return Reply("Sorry, I could not find any songs to recommend right now.")
@@ -86,7 +140,10 @@ def handle_recommend(parsed, state, services):
     state.pending_options = track_ids
     state.pending_kind = "recommendation"
 
-    text = "Based on your playlist, you might like:\n<ol>\n"
+    if different:
+        text = "Something different from the artists in your playlist:\n<ol>\n"
+    else:
+        text = "Based on your playlist, you might like:\n<ol>\n"
     for track in tracks:
         text = text + "<li>" + describe_track(track) + "</li>\n"
     text = text + "</ol>\n"
