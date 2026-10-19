@@ -362,6 +362,12 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 - Used for both `pending_kind`s: recommendation (add the chosen ones) and disambiguation (add the one chosen).
 - LLM calls: 0–1.
 - Done when: ≥ 3 formulations work (all / ordinal subset / none / except-by-artist), including one with an exclusion. Clear `pending_options` after use.
+- Result (Oct 19): **done**. `python -m musiccrs.checks.check_select`: 16/16 rule cases, 6/6 LLM cases, **344 ms** mean per LLM case (max 759). Through the parser (`parse` → `HANDLERS["SELECT"]`), "add the first two", "all of them please", "none, thanks", "add all except the one by Bon Jovi", "just the Coldplay one" and "the second one" all leave the right playlist, in 0.4–1.1 s per turn.
+- Rules (`rule_indices`): every word must be known (all / none words, ordinals, digits, "first N" / "last N", filler words); one unknown word ("except", "by", an artist) → `None`, so "the first one by X" is never read as "the first one". "both" only with 2 options; "none" or "all" mixed with a position → `None`.
+- LLM fallback (`llm_indices`): the options as numbered lines with every artist, answer `{"indices": [1-based numbers]}` or `{"indices": null}`. Anything but a list of whole numbers in 1..count → `None`, so a bad answer never adds a wrong song.
+- `handle_select`: not understood or no `selection` slot → ask again and **keep** the options; `[]` → nothing added, options cleared; `"disambiguation"` with more than one choice → "pick only one", options kept; songs already in the playlist are not added twice and are named in the reply. The `PLAYLIST` act comes from `receive_utterance` as usual.
+- Files: `musiccrs/handlers/selection.py` (`rule_indices`, `options_text`, `llm_indices`, `select_indices`, `clear_pending`, `track_list_html`, `handle_select`), `musiccrs/musiccrs.py` (`SELECT` in `HANDLERS`), `musiccrs/checks/check_select.py`.
+- Data fact: the catalog has **one** Metallica track (a medley), so demo and test lines use Bon Jovi, Nirvana or Coldplay.
 
 ### T12 — R3 help · **Alejandro** · Tue Oct 20
 
@@ -413,7 +419,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 | ASK_TRACK / ASK_ARTIST | 1 | SQLite | ≈ 1 LLM call |
 | RECOMMEND | 1 | `FinalRetriever`, measured in T4: 10 ms per call (empty message, so no dense encode) | ≈ 1 LLM call |
 | CREATE_PLAYLIST | 2 | retrieval | ≈ 2 calls + 0.5 s |
-| SELECT | 1–2 | — | ≈ 2 calls |
+| SELECT | 1 (rules) or 2 (LLM fallback) | measured in T11: 0.4–1.1 s per turn; LLM fallback 344 ms mean | ≈ 1–2 calls |
 
 - Startup: catalog + BM25 index + embeddings + the Qwen3 model take **45–51 s** (measured in T4 on JP's GPU laptop), **once**. This is fine. Part of it is the catalog loaded twice (`BM25PlusRetriever` and `DenseScorer` each create a `MusicCatalogLoader`).
 - If one Gemma 4 31B call already takes > 2 s, add rule-based shortcuts for the common phrasings ("show my playlist", "clear it") before the LLM.
@@ -449,7 +455,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 3. R4 "add Love" → choose "the second one"
 4. R1 remove a song from the panel, add one from the panel box
 5. R5 "who sings Hotel California?", "how many songs by Queen do you have?" (+ the other types)
-6. R6 "recommend me something" → R7 "add all except the one by X"
+6. R6 "recommend me something" → R7 "add all except the one by X" (X = an artist actually in the list; not Metallica, which has one catalog track)
 7. R2 "remove the Eagles song", "clear my playlist"
 8. R8 "make me a playlist for a long run"
 

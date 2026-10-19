@@ -117,7 +117,7 @@ Suggested order (JP's updated Oct 19, after T3 took until Mon): JP **T4 (Mon) �
 → `musiccrs/handlers/recs.py` → done when "sad love songs" and "energetic gym music" give different playlists of sensible lengths.
 
 **JP — T11. R7 selection.** After a recommendation: "all", "none", "the first two", "1 and 3", "all except the one by X". Simple rules first, and the LLM only for the hard cases (exclusions by artist or title).
-→ `musiccrs/handlers/selection.py` → done when ≥ 3 formulations work, including an "except" one.
+→ `musiccrs/handlers/selection.py` → done when ≥ 3 formulations work, including an "except" one. **Done Oct 19:** all, none, ordinals ("the first two", "1 and 3", "the last one") by rules with no LLM call; "all except the one by Bon Jovi", "everything but Toxic" and "the Coldplay one" by one LLM call (344 ms mean). 16/16 rule and 6/6 LLM cases pass (`python -m musiccrs.checks.check_select`). A whole SELECT turn (parser + selection) takes 0.4–1.1 s. Also works for R4 same-name choices (exactly one is added), so T8 only has to set `pending_kind="disambiguation"`. The catalog has only one Metallica track, so demos use Bon Jovi.
 
 **Alejandro — T7. R2 handlers.** Add / remove / view / clear, using T6. Refuse songs that are not in the database, with a clear message.
 → `musiccrs/handlers/playlist.py` → done when all 4 actions work in natural language and the panel updates.
