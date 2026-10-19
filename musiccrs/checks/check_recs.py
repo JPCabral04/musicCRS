@@ -1,7 +1,7 @@
 """Check R6 recommendations (T4) on three playlists: rock, jazz and pop.
 
 Run from the repo root (no API key needed, the LLM is not used):
-    python -m musiccrs.check_recs
+    python -m musiccrs.checks.check_recs
 
 For each playlist it prints the 5 normal and the 5 "something different"
 recommendations (name, artist, popularity) and checks that there are 5 songs,
@@ -11,10 +11,10 @@ Then it prints the ms per call. Exits with code 1 if a check fails.
 import sys
 import time
 
-from .handlers.recs import NUM_RECOMMENDATIONS, handle_recommend, playlist_artists
-from .data.db import normalize
-from .musiccrs import create_services
-from .state import DialogueState, ParsedIntent
+from ..handlers.recs import NUM_RECOMMENDATIONS, handle_recommend, playlist_artists
+from ..data.db import normalize
+from ..musiccrs import create_services
+from ..state import DialogueState, ParsedIntent
 
 # (track name, artist) pairs, all checked to be in the catalog on Oct 19.
 PLAYLISTS = {

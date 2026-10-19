@@ -1,8 +1,8 @@
-"""Check the LLM intent parser (T3) on musiccrs/nlu_examples.json.
+"""Check the LLM intent parser (T3) on musiccrs/checks/nlu_examples.json.
 
 Run from the repo root, with the API key set:
     export LLM_API_KEY="sk-..."
-    python -m musiccrs.check_nlu
+    python -m musiccrs.checks.check_nlu
 
 Prints every example (ok / FAIL, ms), the pass rate and the ms per parse.
 T3 is done when at least 90% of the examples pass.
@@ -11,12 +11,12 @@ import json
 import sys
 import time
 
-from .data.db import normalize
-from .llm import create_client
-from .nlu.parser import parse
-from .state import DialogueState
+from ..data.db import normalize
+from ..llm import create_client
+from ..nlu.parser import parse
+from ..state import DialogueState
 
-EXAMPLES_PATH = "musiccrs/nlu_examples.json"
+EXAMPLES_PATH = "musiccrs/checks/nlu_examples.json"
 PASS_RATE_NEEDED = 0.9
 
 # How a slot value is compared with the expected one:
