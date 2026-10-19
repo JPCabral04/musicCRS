@@ -20,6 +20,15 @@ NUM_RECOMMENDATIONS = 5
 # are filtered out (most of the top ones can be by those artists).
 NUM_CANDIDATES_DIFFERENT = 50
 
+# R8 playlist length. The catalog's mean track duration (tracks with a known duration,
+# counted by build_db on Oct 15) turns the minutes the playlist should last into songs.
+MEAN_TRACK_SECONDS = 239.7
+# Fewer than 8 songs is not a playlist; more than 25 is too long to read in the chat.
+MIN_LENGTH = 8
+MAX_LENGTH = 25
+# Used when the LLM gives no duration (or there is no LLM): 45 min -> 11 songs.
+DEFAULT_MINUTES = 45
+
 _INTENT_OPTIONS = Intent("OPTIONS")
 
 
@@ -150,3 +159,21 @@ def handle_recommend(parsed, state, services):
     text = text + "Say 'add the first two', 'add all of them' or 'none'."
 
     return Reply(text, [options_act(tracks)])
+
+
+def playlist_length(minutes):
+    """How many songs fill `minutes` of music, kept between MIN_LENGTH and MAX_LENGTH.
+
+    The length rule (R8): songs = round(minutes * 60 / MEAN_TRACK_SECONDS), then clamped.
+    60 (gym session)  -> 3600 / 239.7 = 15.02 -> 15 songs
+    10 (coffee break) -> 600 / 239.7 = 2.5    -> 2  -> raised to 8
+    180 (road trip)   -> 10800 / 239.7 = 45.1 -> 45 -> cut to 25
+    """
+    seconds = minutes * 60
+    length = round(seconds / MEAN_TRACK_SECONDS)
+
+    if length < MIN_LENGTH:
+        length = MIN_LENGTH
+    if length > MAX_LENGTH:
+        length = MAX_LENGTH
+    return length
