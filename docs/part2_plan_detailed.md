@@ -217,7 +217,7 @@ class Services:                     # created once in main, shared by every agen
 ```
 
 - `musiccrs.py` keeps `HANDLERS: dict[str, Handler]` (today: ADD, REMOVE, SHOW, CLEAR). `receive_utterance` = `parse_command` (T3: `parse`) → `QUIT` ends the chat → `HANDLERS[parsed.name](...)`, or a fallback reply listing the commands → send the reply with a **`PLAYLIST` act** added when the playlist changed or the intent is `SHOW`.
-- `Services` is a module global built by `create_services()` in `__main__` before `platform.start()`; `retriever` is `None` until T4. The agent constructor is `MusicCRS(agent_id="MusicCRS")`.
+- `Services` is a module global built by `create_services()` in `__main__` before `platform.start()`; since T4 it also loads `FinalRetriever` (≈ 45–50 s, once). The agent constructor is `MusicCRS(agent_id="MusicCRS")`.
 - T2 put simple exact-match versions of ADD / REMOVE / SHOW / CLEAR in `handlers/playlist.py` (most popular match, no resolver, no disambiguation); Alejandro replaces their bodies in T7/T8 and keeps the signatures. Text replies are HTML (the chat renders them), so names are passed through `html.escape(..., quote=False)`.
 - Each owner registers handlers from their own file: `handlers/playlist.py` (ADD, REMOVE, SHOW, CLEAR, HELP), `handlers/qa.py` (ASK_TRACK, ASK_ARTIST), `handlers/recs.py` (RECOMMEND, CREATE_PLAYLIST), `handlers/selection.py` (SELECT).
 
@@ -249,8 +249,8 @@ class Services:                     # created once in main, shared by every agen
 
 | Situation | Policy |
 | --- | --- |
-| R6 recommend | `TurnContext(played_track_ids=tuple(playlist), current_message=<user text or "">, history=(), turn_number=len(playlist)+1)`, `SessionPolicy()` → songs already in the playlist are never recommended |
-| R6 + "something different" / "other artists" (`different` slot) | `SessionPolicy(use_same_artist=False)` |
+| R6 recommend | `recommend_context(playlist)` = `TurnContext(played_track_ids=tuple(playlist), history=(("music", id), ...) one per playlist track, current_message="", turn_number=len(playlist)+1)`, `SessionPolicy()` → songs already in the playlist are never recommended. The `history` entries let bm25_plus search the playlist's names, artists and albums (with `history=()` it would get two empty queries). The message is empty because "recommend me something" is not a music query (and dense then returns nothing) |
+| R6 + "something different" / "other artists" (`different` slot) | `SessionPolicy(use_same_artist=False)`, 50 candidates, then every track sharing an artist with the playlist is dropped (BPR and BM25 still favour the playlist's artists, so the policy alone is not enough) |
 | R8 from scratch | `text_to_item_retrieval(query)` → no played tracks, so only bm25_plus and dense contribute |
 
 ---
@@ -290,6 +290,8 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 - Notes: §4. `retriever.retrieve(ctx, topk=5, policy)`. Empty playlist → ask the user to add songs first, or offer R8. Store the 5 IDs in `pending_options` with `pending_kind="recommendation"` and send them as `OPTIONS`.
 - LLM calls: 0 beyond the parser.
 - Done when: 3 different playlists (rock / jazz / pop) give 5 clearly related songs, none already in the playlist; latency written down.
+- Result (Oct 19): **done**. `python -m musiccrs.checks.check_recs` passes. Each playlist gets 5 new songs, and "different" gives no playlist artist. **10 ms per call** (max 16, GPU laptop). The retriever loads in 45–51 s at startup. Rock → Nirvana, Bon Jovi ×3, Coldplay; jazz → Armstrong, Brubeck ×2, Coltrane, Elliott Smith; pop → Miley Cyrus, Britney ×2, Future, Nelly. Known limit: "different" on the jazz playlist gives non-jazz songs (Elliott Smith, Night Ranger, ...). Putting the playlist's most common tags in `current_message` was tried and changed almost nothing (same_artist and BPR, weight 2 each, outweigh BM25 and dense, weight 1 each), so it was not added.
+- Files: `musiccrs/handlers/recs.py` (`recommend_context`, `options_act`, `playlist_artists`, `drop_playlist_artists`, `handle_recommend`), `musiccrs/musiccrs.py` (`FinalRetriever` in `create_services`, `RECOMMEND` in `HANDLERS`), `musiccrs/checks/check_recs.py`.
 
 ### T5 — R1 playlist panel · **Alejandro** · Thu Oct 15 → Tue Oct 20
 
@@ -409,18 +411,18 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 | slash command | 0 | SQLite ms | < 0.1 s |
 | ADD / REMOVE / SHOW / CLEAR / HELP | 1 (parser) | SQLite + fuzzy | ≈ 1 LLM call |
 | ASK_TRACK / ASK_ARTIST | 1 | SQLite | ≈ 1 LLM call |
-| RECOMMEND | 1 | `FinalRetriever` (dense encode 76 ms GPU / 394 ms CPU in Part 1) | ≈ 1 call + 0.5 s |
+| RECOMMEND | 1 | `FinalRetriever`, measured in T4: 10 ms per call (empty message, so no dense encode) | ≈ 1 LLM call |
 | CREATE_PLAYLIST | 2 | retrieval | ≈ 2 calls + 0.5 s |
 | SELECT | 1–2 | — | ≈ 2 calls |
 
-- Startup: catalog + BM25 index + embeddings + the Qwen3 model take several seconds, **once**. This is fine.
+- Startup: catalog + BM25 index + embeddings + the Qwen3 model take **45–51 s** (measured in T4 on JP's GPU laptop), **once**. This is fine. Part of it is the catalog loaded twice (`BM25PlusRetriever` and `DenseScorer` each create a `MusicCatalogLoader`).
 - If one Gemma 4 31B call already takes > 2 s, add rule-based shortcuts for the common phrasings ("show my playlist", "clear it") before the LLM.
 
 ---
 
 ## 8. Git workflow
 
-- Branches: `jp/db`, `jp/agent-skeleton`, `jp/nlu`, `jp/recs`, `jp/selection`, `ale/playlist-panel`, `ale/resolver`, `ale/playlist-handlers`, `ale/qa`.
+- Branches: `jp/db`, `jp/agent-skeleton`, `jp/nlu`, `jp/recommend`, `jp/selection`, `ale/playlist-panel`, `ale/resolver`, `ale/playlist-handlers`, `ale/qa`.
 - PR → the other person pulls, runs, reviews → merge into `main`. Small commits, one logical change each.
 - Never commit: `cache/` (the DB), the API key, the upload token.
 
@@ -462,4 +464,4 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 5. Whether `rapidfuzz` is worth a new dependency, or FTS5 + `difflib` is enough.
 6. Which phrasings the simulator's persona dialogues actually use (read the first `--no-upload` run).
 7. R8: replace the current playlist, or propose and ask? (decide in T9).
-8. Memory and startup time of `FinalRetriever` on the laptop used for the demo.
+8. Memory and startup time of `FinalRetriever` on the laptop used for the demo (JP's GPU laptop: 45–51 s startup, 10 ms per R6 call; not yet measured on a CPU-only laptop).

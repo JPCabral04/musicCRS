@@ -111,7 +111,7 @@ Each task: **what** → **file** → **done when**.
 Suggested order (JP's updated Oct 19, after T3 took until Mon): JP **T4 (Mon) → T11 (Tue) → T9 (Wed, before the sync; Thu buffer) → T13 at the sync**. T11 moves before T9 because Alejandro's T8 ("the second one") uses T11's `select_indices`, and T11 is tested on T4's recommendations. Alejandro T7 (Sat), T8 (Sun), T10 (Mon–Tue), T12 and T5 finish (Tue).
 
 **JP — T4. R6 recommend.** Pass the playlist to `FinalRetriever` as the "played tracks" and return 5 songs that are not in the playlist. Save them as pending options for T11.
-→ `musiccrs/handlers/recs.py` → done when a playlist of 3 rock songs gives 5 related songs, not just popular ones.
+→ `musiccrs/handlers/recs.py` → done when a playlist of 3 rock songs gives 5 related songs, not just popular ones. **Done Oct 19:** rock, jazz and pop playlists each get 5 related songs, none already in the playlist, in 10 ms per call (`python -m musiccrs.checks.check_recs`). "Something different" leaves out the playlist's artists. Startup now takes 45–51 s (retriever loaded once). Also on Oct 19: `musiccrs/` was reorganized into `data/`, `nlu/`, `handlers/` and `checks/` (layout in the detailed plan §3).
 
 **JP — T9. R8 playlist from a description.** The LLM turns the description into a search query and a length hint (gym session ≈ 60 min). Length = minutes ÷ average song length, kept between 8 and 25.
 → `musiccrs/handlers/recs.py` → done when "sad love songs" and "energetic gym music" give different playlists of sensible lengths.
@@ -184,5 +184,5 @@ python simulation/simulator.py                   # final run, uploads
 
 - **The presentation date:** book an Oct 28 slot early (few slots, no rebooking). Part 3 is also due Oct 28, so check that both fit.
 - **LLM key:** does the Open WebUI key work at `https://openwebui.ux.uis.no` (Gemma 4 31B), and how long does one call take?
-- **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense.
+- **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense. (On JP's GPU laptop: 45–51 s startup, R6 in 10 ms.)
 - **Simulator:** which slash commands does it really send? Check its first `--no-upload` run before Oct 21.
