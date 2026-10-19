@@ -20,6 +20,7 @@ from retrieval.final_retriever import FinalRetriever
 
 from .db import TrackDB
 from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
+from .handlers_recs import handle_recommend
 from .llm import create_client
 from .nlu import parse
 from .state import DialogueState, Reply, Services
@@ -34,11 +35,12 @@ HANDLERS = {
     "REMOVE": handle_remove,
     "SHOW": handle_show,
     "CLEAR": handle_clear,
+    "RECOMMEND": handle_recommend,
 }
 
 # Shown when the agent cannot handle a message (until the HELP handler of T12 exists).
 COMMANDS_TEXT = ("You can use: /add artist: track, /del artist: track, "
-                 "/list, /clear, /quit.")
+                 "/list, /clear, /recommend, /quit.")
 
 # The heavy objects (DB, retriever, LLM client), shared by every agent.
 # Set once in __main__ below, before the server accepts any connection.
