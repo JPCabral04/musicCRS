@@ -90,7 +90,7 @@ Each task: **what** → **file** → **done when**.
 ### Thu Oct 15 (today)
 
 **JP — T1. Database.** Build an SQLite file from the catalog: tracks, artists, normalized names, plus a full-text index. Add one shared `normalize()` function.
-→ `musiccrs/db.py`, `musiccrs/build_db.py` → done when `python -m musiccrs.build_db` passes its self-check: `find_by_name("smells like teen spirit")` returns the Nirvana track first, and `find_by_name("hotel california")` finds "Hotel California - 2013 Remaster" (Eagles). ("Bohemian Rhapsody" and "Don't Stop Me Now" are **not** in the catalog.) **Open the PR first thing:** Alejandro needs it on Friday.
+→ `musiccrs/data/db.py`, `musiccrs/data/build_db.py` → done when `python -m musiccrs.data.build_db` passes its self-check: `find_by_name("smells like teen spirit")` returns the Nirvana track first, and `find_by_name("hotel california")` finds "Hotel California - 2013 Remaster" (Eagles). ("Bohemian Rhapsody" and "Don't Stop Me Now" are **not** in the catalog.) **Open the PR first thing:** Alejandro needs it on Friday.
 
 **Alejandro — T5. Playlist panel (start).** Add a side panel that shows the playlist from a `PLAYLIST` message. Until T2 exists, test with a fake message.
 → `frontend/src/components/Playlist/` → done when a fake playlist renders next to the chat.
@@ -98,38 +98,38 @@ Each task: **what** → **file** → **done when**.
 ### Fri Oct 16
 
 **JP — T2. Agent skeleton.** Per-user state (playlist, pending options), a table from intent → handler function, slash commands (`/add artist: track`, `/del ...`, `/list`, `/clear`, `/recommend`, `/remove <id>`), and a `PLAYLIST` message after every change.
-→ `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add nirvana: smells like teen spirit` then `/list` works. **Done Oct 17** (also `musiccrs/nlu.py` with the slash rules, and simple exact-match handlers in `musiccrs/handlers_playlist.py` that Alejandro takes over in T7).
+→ `musiccrs/musiccrs.py`, `musiccrs/state.py` → done when `/add nirvana: smells like teen spirit` then `/list` works. **Done Oct 17** (also `musiccrs/nlu/parser.py` with the slash rules, and simple exact-match handlers in `musiccrs/handlers/playlist.py` that Alejandro takes over in T7).
 
 **JP — T3. Intent parser.** One LLM call returns JSON: the intent plus its slots (track, artist, question type, description, selection). Slash commands skip the LLM.
-→ `musiccrs/nlu.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.** **Done Oct 19:** 37/37 sentences correct, 0.45 s per LLM call on average (`python -m musiccrs.check_nlu`). Also `musiccrs/llm.py` (LLM client, key from the `LLM_API_KEY` environment variable) and `musiccrs/prompt.py`. Slot names and the 8 question types: detailed plan §3.3.
+→ `musiccrs/nlu/parser.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.** **Done Oct 19:** 37/37 sentences correct, 0.45 s per LLM call on average (`python -m musiccrs.checks.check_nlu`). Also `musiccrs/llm.py` (LLM client, key from the `LLM_API_KEY` environment variable) and `musiccrs/nlu/prompt.py`. Slot names and the 8 question types: detailed plan §3.3.
 
 **Alejandro — T6. Track resolver.** Given a name (and maybe an artist), return the matching tracks: exact normalized match first, then fuzzy.
-→ `musiccrs/resolver.py` → done when "its my life", "IT'S MY LIFE!" and "it's my life by bon jovi" all find the Bon Jovi track.
+→ `musiccrs/data/resolver.py` → done when "its my life", "IT'S MY LIFE!" and "it's my life by bon jovi" all find the Bon Jovi track.
 
 ### Sat Oct 17 – Tue Oct 20
 
 Suggested order (JP's updated Oct 19, after T3 took until Mon): JP **T4 (Mon) → T11 (Tue) → T9 (Wed, before the sync; Thu buffer) → T13 at the sync**. T11 moves before T9 because Alejandro's T8 ("the second one") uses T11's `select_indices`, and T11 is tested on T4's recommendations. Alejandro T7 (Sat), T8 (Sun), T10 (Mon–Tue), T12 and T5 finish (Tue).
 
 **JP — T4. R6 recommend.** Pass the playlist to `FinalRetriever` as the "played tracks" and return 5 songs that are not in the playlist. Save them as pending options for T11.
-→ `musiccrs/handlers_recs.py` → done when a playlist of 3 rock songs gives 5 related songs, not just popular ones.
+→ `musiccrs/handlers/recs.py` → done when a playlist of 3 rock songs gives 5 related songs, not just popular ones. **Done Oct 19:** rock, jazz and pop playlists each get 5 related songs, none already in the playlist, in 10 ms per call (`python -m musiccrs.checks.check_recs`). "Something different" leaves out the playlist's artists. Startup now takes 45–51 s (retriever loaded once). Also on Oct 19: `musiccrs/` was reorganized into `data/`, `nlu/`, `handlers/` and `checks/` (layout in the detailed plan §3).
 
 **JP — T9. R8 playlist from a description.** The LLM turns the description into a search query and a length hint (gym session ≈ 60 min). Length = minutes ÷ average song length, kept between 8 and 25.
-→ `musiccrs/handlers_recs.py` → done when "sad love songs" and "energetic gym music" give different playlists of sensible lengths.
+→ `musiccrs/handlers/recs.py` → done when "sad love songs" and "energetic gym music" give different playlists of sensible lengths.
 
 **JP — T11. R7 selection.** After a recommendation: "all", "none", "the first two", "1 and 3", "all except the one by X". Simple rules first, and the LLM only for the hard cases (exclusions by artist or title).
-→ `musiccrs/selection.py` → done when ≥ 3 formulations work, including an "except" one.
+→ `musiccrs/handlers/selection.py` → done when ≥ 3 formulations work, including an "except" one.
 
 **Alejandro — T7. R2 handlers.** Add / remove / view / clear, using T6. Refuse songs that are not in the database, with a clear message.
-→ `musiccrs/handlers_playlist.py` → done when all 4 actions work in natural language and the panel updates.
+→ `musiccrs/handlers/playlist.py` → done when all 4 actions work in natural language and the panel updates.
 
 **Alejandro — T8. R4 disambiguation.** If T6 returns several tracks, show the top 5 as clickable options. Rank them by popularity plus similarity to the playlist (same artist, BPR vectors from Part 1).
-→ `musiccrs/handlers_playlist.py` → done when "add Love" shows 5 options and clicking or typing "the second one" adds it.
+→ `musiccrs/handlers/playlist.py` → done when "add Love" shows 5 options and clicking or typing "the second one" adds it.
 
 **Alejandro — T10. R5 questions.** 4 question types for tracks (artist, album, release year, length) and 4 for artists (number of songs, most popular song, albums, genres/tags). Answers come from the database, not the LLM.
-→ `musiccrs/handlers_qa.py` → done when all 8 types answer correctly in natural language.
+→ `musiccrs/handlers/qa.py` → done when all 8 types answer correctly in natural language.
 
 **Alejandro — T12. R3 help.** "What can you do?", "help", "how do I remove a song?" → a short explanation with examples.
-→ `musiccrs/handlers_playlist.py` → done when 3 different phrasings get a useful answer.
+→ `musiccrs/handlers/playlist.py` → done when 3 different phrasings get a useful answer.
 
 **Alejandro — T5. Playlist panel (finish).** Connect it to the real `PLAYLIST` message: remove and clear buttons, plus an add box.
 
@@ -160,8 +160,8 @@ If a requirement still fails, fix it today. We get one attempt, so a full demo b
 
 ## 5. How we work together
 
-- Each person only edits **their own files**. JP's base files (`db.py`, `state.py`, `nlu.py`, `musiccrs.py`) change only if both agree once they are frozen (after T3).
-- Handlers live in separate files (`handlers_playlist.py` / `handlers_qa.py` for Alejandro, `handlers_recs.py` / `selection.py` for JP), so we never edit the same file.
+- Each person only edits **their own files**. JP's base files (`data/db.py`, `state.py`, `nlu/parser.py`, `musiccrs.py`) change only if both agree once they are frozen (after T3).
+- Handlers live in separate files (`handlers/playlist.py` / `handlers/qa.py` for Alejandro, `handlers/recs.py` / `handlers/selection.py` for JP), so we never edit the same file.
 - One branch per task (for example `jp/db`, `ale/playlist-panel`) → pull request → the other person reviews and runs it → merge.
 - Never commit `cache/`, the database file, API keys or the upload token.
 
@@ -171,7 +171,7 @@ If a requirement still fails, fix it today. We get one attempt, so a full demo b
 
 ```bash
 conda activate musiccrs
-python -m musiccrs.build_db                      # once: builds cache/musiccrs.db
+python -m musiccrs.data.build_db                      # once: builds cache/musiccrs.db
 python -m musiccrs.musiccrs                      # backend on :5000 (as a module, from the repo root)
 cd frontend && npm start                         # frontend on :3000
 python simulation/simulator.py --no-upload       # needs the backend running
@@ -184,5 +184,5 @@ python simulation/simulator.py                   # final run, uploads
 
 - **The presentation date:** book an Oct 28 slot early (few slots, no rebooking). Part 3 is also due Oct 28, so check that both fit.
 - **LLM key:** does the Open WebUI key work at `https://openwebui.ux.uis.no` (Gemma 4 31B), and how long does one call take?
-- **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense.
+- **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense. (On JP's GPU laptop: 45–51 s startup, R6 in 10 ms.)
 - **Simulator:** which slash commands does it really send? Check its first `--no-upload` run before Oct 21.

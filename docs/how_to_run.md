@@ -12,12 +12,12 @@ All commands are for **Git Bash**, from the **repo root**.
 ```bash
 conda activate musiccrs                # Python 3.11 env
 pip install -r requirements.txt
-python -m musiccrs.build_db            # builds cache/musiccrs.db (~10 s), ends with "OK 1" ... "OK 6"
+python -m musiccrs.data.build_db            # builds cache/musiccrs.db (~10 s), ends with "OK 1" ... "OK 6"
 cd frontend && npm install && cd ..    # needs Node.js (tested with v24); only the first time
 ```
 
 - `build_db` downloads the catalog from Hugging Face the first time (internet needed once).
-- Run `build_db` again only if `musiccrs/db.py` or `musiccrs/build_db.py` changes.
+- Run `build_db` again only if `musiccrs/data/db.py` or `musiccrs/data/build_db.py` changes.
 - **LLM key (needed from T3 on; slash commands work without it).** The course LLM is Gemma 4 31B on
   Open WebUI. Register at <https://openwebui.ux.uis.no> with your student number, then go to
   Settings -> Account and generate an API key. The agent reads it from the `LLM_API_KEY`
@@ -126,7 +126,7 @@ starts a new, empty playlist.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `'musiccrs' is not a package` | started with `python musiccrs/musiccrs.py` | `python -m musiccrs.musiccrs` from the repo root |
-| `cache/musiccrs.db not found` | the DB was never built | `python -m musiccrs.build_db` |
+| `cache/musiccrs.db not found` | the DB was never built | `python -m musiccrs.data.build_db` |
 | `RuntimeError: Services are not loaded` | `MusicCRS` was created without starting `__main__` | start the agent with `python -m musiccrs.musiccrs` |
 | The chat shows no welcome message | backend not running, or started after the page | start terminal 1, then reload the page |
 | `Address already in use` / port 5000 busy | an old backend is still running | close it (`Ctrl+C` in its terminal) and start again |

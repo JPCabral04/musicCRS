@@ -38,7 +38,7 @@ The UI and the simulator receive each agent message as:
 
 - The **simulator reads only `text` and `dialogue_acts`** (`simulation/README.md`). Anything the UI shows beyond that (the playlist panel, buttons) is invisible to it.
 - The JSON key names of an annotation are `slot` and `value` (checked in T2 in `dialoguekit/platforms/flask_socket_platform.py`, `Message.from_utterance`).
-- Run the agent from the repo root as a module: `python -m musiccrs.musiccrs` (since T2 it imports `.db`, `.state`, ...). DialogueKit saves every finished chat to `dialogue_export/` (gitignored).
+- Run the agent from the repo root as a module: `python -m musiccrs.musiccrs` (since T2 it imports `.data.db`, `.state`, ...). DialogueKit saves every finished chat to `dialogue_export/` (gitignored).
 
 ### 1.4 The frontend path ([frontend/src/](../frontend/src/))
 
@@ -81,7 +81,7 @@ Catalog: `talkpl-ai/TalkPlayData-Challenge-Track-Metadata`, split `all_tracks`, 
 - `popularity` 0–93 (median 38) → the R4 ranking signal.
 - `tag_list`: noisy user tags (mean 33 per track) → R5 "genres of an artist", and R8 matching.
 - `release_date` → R5 "release year". `duration` → R5 "how long" and the R8 length.
-- **Name, artist and duration facts** (counted on Oct 15 by `python -m musiccrs.build_db`):
+- **Name, artist and duration facts** (counted on Oct 15 by `python -m musiccrs.data.build_db`):
 
 | Fact | Value | Consequence |
 | --- | --- | --- |
@@ -100,7 +100,22 @@ Catalog: `talkpl-ai/TalkPlayData-Challenge-Track-Metadata`, split `all_tracks`, 
 
 ## 3. Shared interfaces (owner JP, frozen after T3)
 
-### 3.1 `musiccrs/db.py` — T1
+File layout of `musiccrs/` (folders by role since Oct 19):
+
+```
+musiccrs/
+  musiccrs.py     agent + HANDLERS table (python -m musiccrs.musiccrs)
+  state.py        shared types: DialogueState, ParsedIntent, Reply, Services
+  llm.py          LLM client and ask_json (used by the parser, T9, T11)
+  data/           db.py, build_db.py (python -m musiccrs.data.build_db), resolver.py (T6)
+  nlu/            parser.py (parse), prompt.py
+  handlers/       playlist.py (T2/T7/T8/T12), recs.py (T4/T9), qa.py (T10), selection.py (T11)
+  checks/         check_nlu.py, check_recs.py, nlu_examples.json (python -m musiccrs.checks.<name>)
+```
+
+Inside a folder, imports go one package up with `..` (for example `from ..state import Reply` in `handlers/playlist.py`).
+
+### 3.1 `musiccrs/data/db.py` — T1
 
 ```python
 def normalize(text: str) -> str:
@@ -136,12 +151,12 @@ class TrackDB:
 ```
 
 - Tables: `tracks(track_id PK, name, album, popularity, release_date, duration_ms, tags_json, artists_json)`, `track_names(track_id, name, name_norm, base_norm)` (every alias), `track_artists(track_id, position, artist_name, artist_norm)`, plus `tracks_fts` (FTS5 over the normalized names + artists). Indexes on `name_norm`, `base_norm` and `artist_norm`.
-- `musiccrs/build_db.py`: `python -m musiccrs.build_db` reads `MusicCatalogLoader().metadata_dict` and writes `cache/musiccrs.db` (`cache/` is gitignored). It is idempotent: it deletes the file and rebuilds.
+- `musiccrs/data/build_db.py`: `python -m musiccrs.data.build_db` reads `MusicCatalogLoader().metadata_dict` and writes `cache/musiccrs.db` (`cache/` is gitignored). It is idempotent: it deletes the file and rebuilds.
 - Why SQLite: it is in the Python stdlib, it is one file, it does exact lookups by index in ms, and FTS5 handles partial names. The spec allows any database.
 
 ### 3.2 `musiccrs/state.py` — T2 (done)
 
-All shared types live here, so handlers, `nlu.py` and `musiccrs.py` import them from one place (no circular imports).
+All shared types live here, so handlers, `nlu/parser.py` and `musiccrs.py` import them from one place (no circular imports).
 
 ```python
 @dataclass
@@ -158,7 +173,7 @@ class ParsedIntent:
 
 `Reply` and `Services` (§3.4) are in the same file.
 
-### 3.3 `musiccrs/nlu.py` — T2 rules, T3 LLM (frozen Oct 19)
+### 3.3 `musiccrs/nlu/parser.py` — T2 rules, T3 LLM (frozen Oct 19)
 
 T2 added `split_artist_track(text)` (cut at the first `": "`) and `parse_command(text) -> ParsedIntent | None` (slash commands by rules; `None` when the text is not a slash command). T3 adds:
 
@@ -180,7 +195,7 @@ def parse(text: str, state: DialogueState, llm) -> ParsedIntent:
 
 - Slots: `track`, `artist` (as the user wrote them; the resolver finds the real track), `question` (one of the 8 R5 types above, checked against *its* intent), `description` (R8), `selection` (the raw selection text for R7), `different` (only present when true), `topic` (R3, one of `HELP_TOPICS`; absent for general help). Set **only by our code**, dropped if the LLM sends them: `track_id` (from `/remove <id>`) and `text` (the user's message, on `UNKNOWN`).
 - `ASK_TRACK` / `ASK_ARTIST` with a question outside the list keep the intent but lose the `question` slot: the T10 handler must handle a missing question.
-- The prompt lives in `musiccrs/prompt.py` (intents, slot rules, a `Pending options:` line, 8 scope rules against off-topic requests and prompt injection, 18 few-shot examples). Its lists must match the tuples above.
+- The prompt lives in `musiccrs/nlu/prompt.py` (intents, slot rules, a `Pending options:` line, 8 scope rules against off-topic requests and prompt injection, 18 few-shot examples). Its lists must match the tuples above.
 - LLM helpers in `musiccrs/llm.py`, reusable by T9 and T11: `create_client()` (key from the `LLM_API_KEY` environment variable, `None` without it, `max_retries=0`), `extract_json(text)`, `ask_json(llm, messages)` (temperature 0, 5 s timeout; no valid JSON → the model sees its answer and is asked once more, so 2 calls at most; API error → `None`).
 
 ### 3.4 Handler contract and registry — T2 (done)
@@ -202,9 +217,9 @@ class Services:                     # created once in main, shared by every agen
 ```
 
 - `musiccrs.py` keeps `HANDLERS: dict[str, Handler]` (today: ADD, REMOVE, SHOW, CLEAR). `receive_utterance` = `parse_command` (T3: `parse`) → `QUIT` ends the chat → `HANDLERS[parsed.name](...)`, or a fallback reply listing the commands → send the reply with a **`PLAYLIST` act** added when the playlist changed or the intent is `SHOW`.
-- `Services` is a module global built by `create_services()` in `__main__` before `platform.start()`; `retriever` is `None` until T4. The agent constructor is `MusicCRS(agent_id="MusicCRS")`.
-- T2 put simple exact-match versions of ADD / REMOVE / SHOW / CLEAR in `handlers_playlist.py` (most popular match, no resolver, no disambiguation); Alejandro replaces their bodies in T7/T8 and keeps the signatures. Text replies are HTML (the chat renders them), so names are passed through `html.escape(..., quote=False)`.
-- Each owner registers handlers from their own file: `handlers_playlist.py` (ADD, REMOVE, SHOW, CLEAR, HELP), `handlers_qa.py` (ASK_TRACK, ASK_ARTIST), `handlers_recs.py` (RECOMMEND, CREATE_PLAYLIST), `selection.py` (SELECT).
+- `Services` is a module global built by `create_services()` in `__main__` before `platform.start()`; since T4 it also loads `FinalRetriever` (≈ 45–50 s, once). The agent constructor is `MusicCRS(agent_id="MusicCRS")`.
+- T2 put simple exact-match versions of ADD / REMOVE / SHOW / CLEAR in `handlers/playlist.py` (most popular match, no resolver, no disambiguation); Alejandro replaces their bodies in T7/T8 and keeps the signatures. Text replies are HTML (the chat renders them), so names are passed through `html.escape(..., quote=False)`.
+- Each owner registers handlers from their own file: `handlers/playlist.py` (ADD, REMOVE, SHOW, CLEAR, HELP), `handlers/qa.py` (ASK_TRACK, ASK_ARTIST), `handlers/recs.py` (RECOMMEND, CREATE_PLAYLIST), `handlers/selection.py` (SELECT).
 
 ### 3.5 Dialogue acts (the UI and the simulator contract)
 
@@ -234,8 +249,8 @@ class Services:                     # created once in main, shared by every agen
 
 | Situation | Policy |
 | --- | --- |
-| R6 recommend | `TurnContext(played_track_ids=tuple(playlist), current_message=<user text or "">, history=(), turn_number=len(playlist)+1)`, `SessionPolicy()` → songs already in the playlist are never recommended |
-| R6 + "something different" / "other artists" (`different` slot) | `SessionPolicy(use_same_artist=False)` |
+| R6 recommend | `recommend_context(playlist)` = `TurnContext(played_track_ids=tuple(playlist), history=(("music", id), ...) one per playlist track, current_message="", turn_number=len(playlist)+1)`, `SessionPolicy()` → songs already in the playlist are never recommended. The `history` entries let bm25_plus search the playlist's names, artists and albums (with `history=()` it would get two empty queries). The message is empty because "recommend me something" is not a music query (and dense then returns nothing) |
+| R6 + "something different" / "other artists" (`different` slot) | `SessionPolicy(use_same_artist=False)`, 50 candidates, then every track sharing an artist with the playlist is dropped (BPR and BM25 still favour the playlist's artists, so the policy alone is not enough) |
 | R8 from scratch | `text_to_item_retrieval(query)` → no played tracks, so only bm25_plus and dense contribute |
 
 ---
@@ -246,10 +261,10 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 
 ### T1 — Database · **JP** · Thu Oct 15
 
-- Files: `musiccrs/db.py`, `musiccrs/build_db.py`.
+- Files: `musiccrs/data/db.py`, `musiccrs/data/build_db.py`.
 - Notes: §3.1. Store **all** artists of a track. Keep `name_norm` for exact lookups and FTS5 for partial ones.
 - LLM calls: 0.
-- Done when: `python -m musiccrs.build_db` builds the DB in under a minute and its self-check passes: `find_by_name("smells like teen spirit")` returns Nirvana first; `find_by_name("SMELLS LIKE TEEN SPIRIT!", artist="nirvana")` returns only Nirvana; `find_by_name("hotel california")` finds the Eagles remaster; `fuzzy_candidates("teen spirit nirvana")` contains it; `artist_tracks("queen")` returns 13 tracks; `get()` on 3 random IDs matches `metadata_dict`.
+- Done when: `python -m musiccrs.data.build_db` builds the DB in under a minute and its self-check passes: `find_by_name("smells like teen spirit")` returns Nirvana first; `find_by_name("SMELLS LIKE TEEN SPIRIT!", artist="nirvana")` returns only Nirvana; `find_by_name("hotel california")` finds the Eagles remaster; `fuzzy_candidates("teen spirit nirvana")` contains it; `artist_tracks("queen")` returns 13 tracks; `get()` on 3 random IDs matches `metadata_dict`.
 - Result (Oct 15): build 2.5 s (+ 6 s catalog load); exact lookup 0.2 ms, fuzzy 7 ms.
 
 ### T2 — Agent skeleton · **JP** · Fri Oct 16
@@ -258,23 +273,25 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 - Notes: §1.2 (singletons in `main`), §3.2, §3.4, §3.6. Remove the double `platform.start()`. Keep `/quit` and the welcome message. The welcome message mentions "type help".
 - LLM calls: 0 (slash path).
 - Done when: `/add nirvana: smells like teen spirit`, `/list`, `/del nirvana: smells like teen spirit`, `/clear` work in the browser and each sends a `PLAYLIST` act.
-- Result (Oct 17): done, checked with a socket.io client (the browser's channel). Each command replies with a `PLAYLIST` act (empty after `/clear`); a failed `/add` sends none; `/recommend` and free text get a fallback that lists the commands; two clients at once keep separate playlists. Files: `state.py`, `nlu.py` (`parse_command`), `handlers_playlist.py` (simple versions), `musiccrs.py`.
+- Result (Oct 17): done, checked with a socket.io client (the browser's channel). Each command replies with a `PLAYLIST` act (empty after `/clear`); a failed `/add` sends none; `/recommend` and free text get a fallback that lists the commands; two clients at once keep separate playlists. Files: `state.py`, `nlu.py` (`parse_command`), `handlers/playlist.py` (simple versions), `musiccrs.py`.
 - Known limits, left to T6/T7: exact names only (`/add bohemian rhapsody by queen` is not found, "by" is not parsed); several matches → the most popular is added (`/add bohemian rhapsody` adds Queen's "Operatic Section / 2011 A Cappella Mix").
 
 ### T3 — Intent parser · **JP** · Fri Oct 16
 
-- Files: `musiccrs/llm.py`, `musiccrs/prompt.py`, `musiccrs/nlu.py`, `musiccrs/musiccrs.py`, `musiccrs/nlu_examples.json` (37 sentences, ≥ 2 per intent, with the expected parse), `musiccrs/check_nlu.py`.
+- Files: `musiccrs/llm.py`, `musiccrs/nlu/prompt.py`, `musiccrs/nlu/parser.py`, `musiccrs/musiccrs.py`, `musiccrs/checks/nlu_examples.json` (37 sentences, ≥ 2 per intent, with the expected parse), `musiccrs/checks/check_nlu.py`.
 - Notes: §3.3. Low temperature (0). Ask for JSON only. Include `pending_kind` in the prompt.
 - LLM calls: 1 (2 with a retry).
-- Done when: `python -m musiccrs.check_nlu` parses ≥ 90% of `nlu_examples.json` correctly and prints the ms per call. **Then the interfaces are frozen.**
+- Done when: `python -m musiccrs.checks.check_nlu` parses ≥ 90% of `nlu_examples.json` correctly and prints the ms per call. **Then the interfaces are frozen.**
 - Result (Oct 19): **37/37 (100%)**, ms per parse mean 447, max 895 (Gemma 4 31B on Open WebUI). Interfaces frozen. The check compares `track`/`artist` after `normalize`, `description`/`selection` by presence only, other slots exactly, and counts an extra slot as a failure. The sentences were written by us, so 100% here does not promise 100% on real users; the simulator run (T13) is the next test.
 
 ### T4 — R6 recommend · **JP** · Sat Oct 17
 
-- File: `musiccrs/handlers_recs.py`.
+- File: `musiccrs/handlers/recs.py`.
 - Notes: §4. `retriever.retrieve(ctx, topk=5, policy)`. Empty playlist → ask the user to add songs first, or offer R8. Store the 5 IDs in `pending_options` with `pending_kind="recommendation"` and send them as `OPTIONS`.
 - LLM calls: 0 beyond the parser.
 - Done when: 3 different playlists (rock / jazz / pop) give 5 clearly related songs, none already in the playlist; latency written down.
+- Result (Oct 19): **done**. `python -m musiccrs.checks.check_recs` passes. Each playlist gets 5 new songs, and "different" gives no playlist artist. **10 ms per call** (max 16, GPU laptop). The retriever loads in 45–51 s at startup. Rock → Nirvana, Bon Jovi ×3, Coldplay; jazz → Armstrong, Brubeck ×2, Coltrane, Elliott Smith; pop → Miley Cyrus, Britney ×2, Future, Nelly. Known limit: "different" on the jazz playlist gives non-jazz songs (Elliott Smith, Night Ranger, ...). Putting the playlist's most common tags in `current_message` was tried and changed almost nothing (same_artist and BPR, weight 2 each, outweigh BM25 and dense, weight 1 each), so it was not added.
+- Files: `musiccrs/handlers/recs.py` (`recommend_context`, `options_act`, `playlist_artists`, `drop_playlist_artists`, `handle_recommend`), `musiccrs/musiccrs.py` (`FinalRetriever` in `create_services`, `RECOMMEND` in `HANDLERS`), `musiccrs/checks/check_recs.py`.
 
 ### T5 — R1 playlist panel · **Alejandro** · Thu Oct 15 → Tue Oct 20
 
@@ -285,7 +302,7 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 
 ### T6 — Track resolver · **Alejandro** · Fri Oct 16
 
-- File: `musiccrs/resolver.py`.
+- File: `musiccrs/data/resolver.py`.
 
 ```python
 def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
@@ -302,14 +319,14 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 
 ### T7 — R2 handlers · **Alejandro** · Sat Oct 17
 
-- File: `musiccrs/handlers_playlist.py` (ADD, REMOVE, SHOW, CLEAR).
+- File: `musiccrs/handlers/playlist.py` (ADD, REMOVE, SHOW, CLEAR).
 - Notes: 1 match → add/remove. Several → T8. 0 → "I couldn't find X in the database". A duplicate add → say so, don't add twice. REMOVE resolves against the **playlist first** ("remove the Queen song").
 - LLM calls: 0 beyond the parser.
 - Done when: all 4 actions work in natural language with 2+ phrasings each, and the panel updates.
 
 ### T8 — R4 disambiguation · **Alejandro** · Sun Oct 18
 
-- File: `musiccrs/handlers_playlist.py`.
+- File: `musiccrs/handlers/playlist.py`.
 - Ranking: `score = popularity/93 + same_artist_as_playlist + cosine(BPR(track), mean BPR(playlist))`. With an empty playlist, popularity only. Show the top 5 as `OPTIONS` and store them in `pending_options` (`pending_kind="disambiguation"`).
 - The choice: a click (quick reply), or "the second one" / "the one by X" → SELECT, using T11's `select_indices` (shared, owned by JP).
 - LLM calls: 0 beyond the parser.
@@ -317,14 +334,14 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 
 ### T9 — R8 playlist from a description · **JP** · Sun Oct 18
 
-- File: `musiccrs/handlers_recs.py` (CREATE_PLAYLIST).
+- File: `musiccrs/handlers/recs.py` (CREATE_PLAYLIST).
 - Notes: one LLM call returns `{"query": "...", "minutes": N}`. If no duration is implied, `minutes` comes from the activity (gym ≈ 60, a party is longer, "a few songs" is short). Length = `round(minutes * 60 / mean_duration)`, clamped 8–25 (mean duration in §2). Then `text_to_item_retrieval(query, topk=length)`. Ask before replacing a non-empty playlist, or show the result as a proposal (A VERIFICAR: decide in T9).
 - LLM calls: 1.
 - Done when: 3 descriptions give relevant playlists of different lengths, and the length rule is written in the code comment.
 
 ### T10 — R5 questions · **Alejandro** · Mon Oct 19 – Tue Oct 20
 
-- File: `musiccrs/handlers_qa.py` (ASK_TRACK, ASK_ARTIST).
+- File: `musiccrs/handlers/qa.py` (ASK_TRACK, ASK_ARTIST).
 - Question types (the `question` slot): track → `artist`, `album`, `release_year`, `duration` (popularity as a fifth if time allows); artist → `track_count`, `top_track`, `albums`, `genres` (top tags across the artist's tracks).
 - The answers come **from the DB with templates**. The LLM only fills the slots (in the T3 call), so it cannot invent facts. If the track is ambiguous, answer for the most popular match and say which one.
 - LLM calls: 0 beyond the parser.
@@ -332,7 +349,7 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 
 ### T11 — R7 selection · **JP** · Mon Oct 19 – Tue Oct 20
 
-- File: `musiccrs/selection.py` (SELECT).
+- File: `musiccrs/handlers/selection.py` (SELECT).
 
 ```python
 def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
@@ -348,7 +365,7 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 
 ### T12 — R3 help · **Alejandro** · Tue Oct 20
 
-- File: `musiccrs/handlers_playlist.py` (HELP).
+- File: `musiccrs/handlers/playlist.py` (HELP).
 - Notes: a fixed, well-written text with one example per feature. If the parser fills a `topic` slot ("how do I remove?"), show only that part.
 - LLM calls: 0 beyond the parser.
 - Done when: "help", "what can you do?" and "how do I make a playlist?" all give a useful answer.
@@ -394,18 +411,18 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 | slash command | 0 | SQLite ms | < 0.1 s |
 | ADD / REMOVE / SHOW / CLEAR / HELP | 1 (parser) | SQLite + fuzzy | ≈ 1 LLM call |
 | ASK_TRACK / ASK_ARTIST | 1 | SQLite | ≈ 1 LLM call |
-| RECOMMEND | 1 | `FinalRetriever` (dense encode 76 ms GPU / 394 ms CPU in Part 1) | ≈ 1 call + 0.5 s |
+| RECOMMEND | 1 | `FinalRetriever`, measured in T4: 10 ms per call (empty message, so no dense encode) | ≈ 1 LLM call |
 | CREATE_PLAYLIST | 2 | retrieval | ≈ 2 calls + 0.5 s |
 | SELECT | 1–2 | — | ≈ 2 calls |
 
-- Startup: catalog + BM25 index + embeddings + the Qwen3 model take several seconds, **once**. This is fine.
+- Startup: catalog + BM25 index + embeddings + the Qwen3 model take **45–51 s** (measured in T4 on JP's GPU laptop), **once**. This is fine. Part of it is the catalog loaded twice (`BM25PlusRetriever` and `DenseScorer` each create a `MusicCatalogLoader`).
 - If one Gemma 4 31B call already takes > 2 s, add rule-based shortcuts for the common phrasings ("show my playlist", "clear it") before the LLM.
 
 ---
 
 ## 8. Git workflow
 
-- Branches: `jp/db`, `jp/agent-skeleton`, `jp/nlu`, `jp/recs`, `jp/selection`, `ale/playlist-panel`, `ale/resolver`, `ale/playlist-handlers`, `ale/qa`.
+- Branches: `jp/db`, `jp/agent-skeleton`, `jp/nlu`, `jp/recommend`, `jp/selection`, `ale/playlist-panel`, `ale/resolver`, `ale/playlist-handlers`, `ale/qa`.
 - PR → the other person pulls, runs, reviews → merge into `main`. Small commits, one logical change each.
 - Never commit: `cache/` (the DB), the API key, the upload token.
 
@@ -447,4 +464,4 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 5. Whether `rapidfuzz` is worth a new dependency, or FTS5 + `difflib` is enough.
 6. Which phrasings the simulator's persona dialogues actually use (read the first `--no-upload` run).
 7. R8: replace the current playlist, or propose and ask? (decide in T9).
-8. Memory and startup time of `FinalRetriever` on the laptop used for the demo.
+8. Memory and startup time of `FinalRetriever` on the laptop used for the demo (JP's GPU laptop: 45–51 s startup, 10 ms per R6 call; not yet measured on a CPU-only laptop).

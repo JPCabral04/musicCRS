@@ -13,7 +13,7 @@ LLM_MODEL = "gorina10.gemma-4-31b"
 
 # A reply must come back within 3-5 s, so one call may not hang for longer than this.
 # A timed-out call is not retried, so a stuck server costs at most 5 s.
-# To be checked against the real ms per call in `python -m musiccrs.nlu --check`.
+# To be checked against the real ms per call in `python -m musiccrs.checks.check_nlu`.
 LLM_TIMEOUT_SECONDS = 5
 
 # Sent when the model's answer had no valid JSON, before the second (last) call.

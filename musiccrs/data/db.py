@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Where the database file lives: <repo root>/cache/musiccrs.db
+# This file is <repo root>/musiccrs/data/db.py, so the repo root is three folders up.
 this_file = Path(__file__).resolve()
-musiccrs_folder = this_file.parent
+data_folder = this_file.parent
+musiccrs_folder = data_folder.parent
 repo_root = musiccrs_folder.parent
 DEFAULT_DB_PATH = repo_root / "cache" / "musiccrs.db"
 
@@ -106,7 +108,7 @@ class TrackDB:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(
-                str(path) + " not found. Build it first: python -m musiccrs.build_db")
+                str(path) + " not found. Build it first: python -m musiccrs.data.build_db")
 
         # mode=ro opens the file read-only. check_same_thread=False lets the
         # chat server use this connection from different threads.

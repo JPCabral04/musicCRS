@@ -5,6 +5,7 @@ Run from the repo root as a module (so the package imports work):
 """
 
 import json
+import time
 
 from dialoguekit.core.annotated_utterance import AnnotatedUtterance
 from dialoguekit.core.dialogue_act import DialogueAct
@@ -15,10 +16,13 @@ from dialoguekit.participant.agent import Agent
 from dialoguekit.participant.participant import DialogueParticipant
 from dialoguekit.platforms import FlaskSocketPlatform
 
-from .db import TrackDB
-from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
+from retrieval.final_retriever import FinalRetriever
+
+from .data.db import TrackDB
+from .handlers.playlist import handle_add, handle_clear, handle_remove, handle_show
+from .handlers.recs import handle_recommend
 from .llm import create_client
-from .nlu import parse
+from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
 
 _INTENT_OPTIONS = Intent("OPTIONS")
@@ -31,11 +35,12 @@ HANDLERS = {
     "REMOVE": handle_remove,
     "SHOW": handle_show,
     "CLEAR": handle_clear,
+    "RECOMMEND": handle_recommend,
 }
 
 # Shown when the agent cannot handle a message (until the HELP handler of T12 exists).
 COMMANDS_TEXT = ("You can use: /add artist: track, /del artist: track, "
-                 "/list, /clear, /quit.")
+                 "/list, /clear, /recommend, /quit.")
 
 # The heavy objects (DB, retriever, LLM client), shared by every agent.
 # Set once in __main__ below, before the server accepts any connection.
@@ -52,8 +57,14 @@ def create_services(use_llm=True):
         if llm is None:
             print("LLM_API_KEY is not set: the agent runs with slash commands only.")
 
-    # The retriever (FinalRetriever) is added in T4.
-    return Services(db=db, retriever=None, llm=llm)
+    # The Part 1 retriever (BM25, same artist, BPR, dense): loaded once, it takes seconds.
+    print("Loading the retriever...")
+    start = time.perf_counter()
+    retriever = FinalRetriever()
+    seconds = time.perf_counter() - start
+    print("Retriever loaded in " + str(round(seconds, 1)) + " s.")
+
+    return Services(db=db, retriever=retriever, llm=llm)
 
 
 def playlist_act(state, db):

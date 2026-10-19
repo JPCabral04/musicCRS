@@ -1,7 +1,7 @@
 """Understanding the user's message (T2: slash commands by rules; T3 adds the LLM parser)."""
-from .llm import ask_json
+from ..llm import ask_json
 from .prompt import PROMPT_TEMPLATE
-from .state import ParsedIntent
+from ..state import ParsedIntent
 
 # Every intent the agent knows. Frozen after T3: the handlers are registered under these names.
 INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
