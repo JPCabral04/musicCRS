@@ -6,6 +6,8 @@ goes to the LLM.
 """
 from ..data.db import normalize
 from ..llm import ask_json
+from .playlist import describe_track
+from ..state import Reply
 
 # Words that pick every option: "all of them", "everything".
 ALL_WORDS = ("all", "everything", "every")
@@ -235,3 +237,79 @@ def select_indices(text, tracks, llm):
     if llm is None:
         return None
     return llm_indices(text, tracks, llm)
+
+
+def clear_pending(state):
+    """Forget the shown options, so a later "the first one" does not refer to them."""
+    state.pending_options = []
+    state.pending_kind = None
+
+
+def track_list_html(tracks):
+    """The tracks as an HTML bullet list (the chat renders HTML).
+
+    [Yellow, Enter Sandman] -> "<ul>\n<li>Yellow by Coldplay</li>\n<li>Enter Sandman by Metallica</li>\n</ul>"
+    """
+    text = "<ul>\n"
+    for track in tracks:
+        text = text + "<li>" + describe_track(track) + "</li>\n"
+    text = text + "</ul>"
+    return text
+
+
+def handle_select(parsed, state, services):
+    """SELECT (R7): add the options the user chose to the playlist.
+
+    Works for both kinds of pending options:
+    - "recommendation" (R6, R8): any number of the shown songs may be added;
+    - "disambiguation" (R4, same name): exactly one song is added.
+    """
+    if len(state.pending_options) == 0:
+        return Reply("There is nothing to choose from right now. "
+                     "Ask me for recommendations first, for example: 'recommend me some songs'.")
+
+    if "selection" not in parsed.slots:
+        return Reply("Which ones? Say for example 'the first two', 'all of them' or 'none'.")
+    selection_text = parsed.slots["selection"]
+
+    # The shown options, in the order they were shown.
+    tracks = []
+    for track_id in state.pending_options:
+        tracks.append(services.db.get(track_id))
+
+    indices = select_indices(selection_text, tracks, services.llm)
+
+    # Not understood: keep the options, so the user can say it again.
+    if indices is None:
+        return Reply("Sorry, I did not understand which ones you mean. Say for example "
+                     "'the first two', 'all of them', 'none' or 'all except the one by ...'.")
+
+    # "none": nothing is added, and the options are done with.
+    if len(indices) == 0:
+        clear_pending(state)
+        return Reply("OK, I did not add any of them.")
+
+    # Same-name choices: only one song can be the one the user meant.
+    if state.pending_kind == "disambiguation" and len(indices) > 1:
+        return Reply("Please pick only one of them, for example 'the second one'.")
+
+    added = []
+    already_there = []
+    for index in indices:
+        track = tracks[index]
+        if track.track_id in state.playlist:
+            already_there.append(track)
+        else:
+            state.playlist.append(track.track_id)
+            added.append(track)
+
+    clear_pending(state)
+
+    text = ""
+    if len(added) > 0:
+        text = "Added to your playlist:\n" + track_list_html(added)
+    if len(already_there) > 0:
+        if text != "":
+            text = text + "\n"
+        text = text + "Already in your playlist:\n" + track_list_html(already_there)
+    return Reply(text)
