@@ -1,0 +1,10 @@
+from musiccrs.data.db import TrackDB
+from musiccrs.data.resolver import resolve
+
+db = TrackDB("cache/musiccrs.db")
+
+# Pruebas requeridas por el plan:
+print("1. exact/fuzzy:", resolve(db, "its my life")[0].name)
+print("2. punctuation/uppercase:", resolve(db, "IT'S MY LIFE!")[0].name)
+print("3. song by artist:", resolve(db, "it's my life by bon jovi")[0].name)
+print("4. Nirvana:", resolve(db, "smells like teen spirit")[0].name)
