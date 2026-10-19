@@ -13,7 +13,7 @@ import time
 
 from .data.db import normalize
 from .llm import create_client
-from .nlu import parse
+from .nlu.parser import parse
 from .state import DialogueState
 
 EXAMPLES_PATH = "musiccrs/nlu_examples.json"

@@ -22,7 +22,7 @@ from .data.db import TrackDB
 from .handlers_playlist import handle_add, handle_clear, handle_remove, handle_show
 from .handlers_recs import handle_recommend
 from .llm import create_client
-from .nlu import parse
+from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
 
 _INTENT_OPTIONS = Intent("OPTIONS")

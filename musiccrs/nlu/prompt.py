@@ -1,9 +1,9 @@
-"""The system prompt of the LLM intent parser (T3), used by nlu.build_prompt().
+"""The system prompt of the LLM intent parser (T3), used by build_prompt() in parser.py.
 
 It lists the same intents, slots and allowed values as INTENTS, SLOT_NAMES,
-TRACK_QUESTIONS, ARTIST_QUESTIONS and HELP_TOPICS in nlu.py: change both together.
+TRACK_QUESTIONS, ARTIST_QUESTIONS and HELP_TOPICS in parser.py: change both together.
 
-<PENDING> is replaced by nlu.build_prompt(). (A plain .replace() is used instead of
+<PENDING> is replaced by build_prompt() in parser.py. (A plain .replace() is used instead of
 .format(), because the JSON braces { } in the examples would confuse .format().)
 """
 
