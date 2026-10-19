@@ -11,7 +11,7 @@ import json
 import sys
 import time
 
-from .db import normalize
+from .data.db import normalize
 from .llm import create_client
 from .nlu import parse
 from .state import DialogueState

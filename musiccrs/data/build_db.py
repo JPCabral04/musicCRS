@@ -1,7 +1,7 @@
 """Build the track database cache/musiccrs.db from the catalog (Part 2, T1).
 
 Run from the repo root:
-    python -m musiccrs.build_db
+    python -m musiccrs.data.build_db
 """
 import json
 import random

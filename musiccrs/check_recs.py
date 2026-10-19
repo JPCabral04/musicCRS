@@ -12,7 +12,7 @@ import sys
 import time
 
 from .handlers_recs import NUM_RECOMMENDATIONS, handle_recommend, playlist_artists
-from .db import normalize
+from .data.db import normalize
 from .musiccrs import create_services
 from .state import DialogueState, ParsedIntent
 

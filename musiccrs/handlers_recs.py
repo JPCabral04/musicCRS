@@ -9,7 +9,7 @@ from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
 
 from retrieval.context import SessionPolicy, TurnContext
 
-from .db import normalize
+from .data.db import normalize
 from .handlers_playlist import describe_track
 from .state import Reply
 
