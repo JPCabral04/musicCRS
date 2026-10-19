@@ -52,8 +52,8 @@ Only 3 files matter:
 
 | File | What it does |
 | --- | --- |
-| `retrieval/bm25.py` | A search engine over song **name + artist + album**. |
-| `retrieval/run_bm25_baseline.py` | For every turn, glues the **whole conversation** into one text and searches with it. Writes `predictions.json`. |
+| `retrieval/methods/bm25.py` | A search engine over song **name + artist + album**. |
+| `retrieval/experiments/run_bm25_baseline.py` | For every turn, glues the **whole conversation** into one text and searches with it. Writes `predictions.json`. |
 | `retrieval/evaluation/evaluate.py` | Compares `predictions.json` with the correct songs and prints the score. |
 
 **BM25** = keyword search. A song scores high if its name/artist/album shares rare words with the query (for example "Nirvana").
@@ -128,7 +128,7 @@ Each task: **what** → **file** → **done when**.
 → `retrieval/context.py` → done when turn 1 has 0 played songs and turn 8 has 7.
 
 **JP — T3. Experiment runner.** One command that runs any recommender on validation or test and prints the score and the time per query.
-→ `retrieval/run_experiment.py` → done when running the baseline on test gives **0.1446** again.
+→ `retrieval/experiments/run_experiment.py` → done when running the baseline on test gives **0.1446** again.
 
 JP opens a pull request. **Alejandro** reviews it and runs the baseline command himself. He must get the same 0.1446.
 
@@ -141,10 +141,10 @@ JP opens a pull request. **Alejandro** reviews it and runs the baseline command 
 2. add `tag_list` to the search index;
 3. score the current message and the old history separately, and give the current message more weight.
 
-→ `retrieval/bm25_plus.py` → done when it beats the baseline on validation.
+→ `retrieval/methods/bm25_plus.py` → done when it beats the baseline on validation.
 
 **Alejandro — T5. Same-artist recommender (simple version).** Return the songs by already-played artists, the most recent artist first, then by popularity. Empty on turn 1.
-→ `retrieval/session_cf.py` → done when its validation score is written down.
+→ `retrieval/methods/session_cf.py` → done when its validation score is written down.
 
 **Fri Oct 2 — Alejandro:** review and run JP's `fix/ale` PR first (T4/T5 adapted to the harness; expect bm25_plus val_all mean ≈ 0.2214).
 
@@ -154,7 +154,7 @@ JP opens a pull request. **Alejandro** reviews it and runs the baseline command 
 3. Embed the user's message and return the closest songs.
 4. Measure the time per query.
 
-→ `retrieval/dense.py` → done when the check passes and the validation score is written down.
+→ `retrieval/methods/dense.py` → done when the check passes and the validation score is written down.
 
 ### Sat Oct 3 — sync meeting
 
@@ -163,10 +163,10 @@ Each person runs the *other's* code and gets the same numbers. Check on test onc
 ### Sat Oct 3 – Sun Oct 4
 
 **Alejandro — T7. BPR recommender.** Average the BPR vectors of the played songs, return the most similar songs. Also use it to order the same-artist list. (It reuses the embedding loader from his own `dense.py`.)
-→ `retrieval/session_cf.py`.
+→ `retrieval/methods/session_cf.py`.
 
 **JP — T8. Merge (RRF).** Start with the 2 lists that already exist (bm25_plus, same_artist), then add dense and BPR when they are merged. Try a few weights per list **on validation** and keep the best.
-→ `retrieval/fusion.py` → done when the merge beats every single recommender.
+→ `retrieval/methods/fusion.py` → done when the merge beats every single recommender.
 
 ### Mon Oct 5
 
@@ -211,9 +211,9 @@ conda activate musiccrs
 Run something (after T3 exists):
 
 ```bash
-python -m retrieval.run_experiment --method bm25_plus --split val --limit 200   # quick check (only compare nDCG)
-python -m retrieval.run_experiment --method bm25_plus --split val               # the number you write in your log
-python -m retrieval.run_experiment --method fusion --split val_all              # confirm a final choice on all 3 groups
+python -m retrieval.experiments.run_experiment --method bm25_plus --split val --limit 200   # quick check (only compare nDCG)
+python -m retrieval.experiments.run_experiment --method bm25_plus --split val               # the number you write in your log
+python -m retrieval.experiments.run_experiment --method fusion --split val_all              # confirm a final choice on all 3 groups
 ```
 
 The final test check (T9):

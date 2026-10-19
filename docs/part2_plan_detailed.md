@@ -67,7 +67,7 @@ T5 adds the playlist panel **beside** `ChatBox` and reads the same `onMessage` s
 | `FinalRetriever.retrieve(ctx, topk, policy)` | [retrieval/final_retriever.py](../retrieval/final_retriever.py) | T4 (R6) |
 | `FinalRetriever.text_to_item_retrieval(query, topk)` | same | T9 (R8) |
 | `TurnContext`, `SessionPolicy`, `finalize_top_k` | [retrieval/context.py](../retrieval/context.py) | T4, T9 |
-| BPR vectors `cf-bpr` (47,071 × 128) | [retrieval/session_cf.py](../retrieval/session_cf.py) | T8 (rank options by similarity to the playlist) |
+| BPR vectors `cf-bpr` (47,071 × 128) | [retrieval/methods/session_cf.py](../retrieval/methods/session_cf.py) | T8 (rank options by similarity to the playlist) |
 
 ---
 

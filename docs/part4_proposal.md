@@ -98,7 +98,7 @@ into slides or a report.
 - **F2.2 lyrics index.** We only have the lyrics *vectors* (1024-d, not normalized, norm ~110),
   not the lyrics text. The index is the lyrics matrix, L2-normalized, with rows in the same
   `track_ids` order as the track database. Query side: `Qwen/Qwen3-Embedding-0.6B` in query
-  mode, as `retrieval/dense.py` already does for metadata. How many tracks have an empty or
+  mode, as `retrieval/methods/dense.py` already does for metadata. How many tracks have an empty or
   meaningless lyrics vector (instrumentals) is **still to check**; those rows are left out.
 - **Critique examples to support.** "More/less like #k", "less like the one by X", "older",
   "newer", "more popular", "more acoustic". F1.2 needs year, popularity and tags.

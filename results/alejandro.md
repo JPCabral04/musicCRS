@@ -17,7 +17,7 @@
 - Queries are embedded in batches by `DenseScorer.prepare` (called by the runner) and cached by text in `cache/dense/`; GPU float16 when available; `max_seq_length = 512`.
 - Track matrix loaded column-wise; every catalog ID is asserted present. **492 tracks have empty text/audio vectors** (zero row, never retrieved by dense).
 - **Sanity check:** self-rank 1 for 50/50 tracks (GPU, float16).
-- **Live latency** (`python -m retrieval.dense --time 100`, no cache): median **76 ms/query** on GPU (RTX 3060), **394 ms** on CPU (16 threads).
+- **Live latency** (`python -m retrieval.methods.dense --time 100`, no cache): median **76 ms/query** on GPU (RTX 3060), **394 ms** on CPU (16 threads).
 - A full val0 run takes ~2 min on the GPU (~1 min embedding, then 5.7 ms/query from the cache).
 
 ### Results (played tracks removed, full folds)

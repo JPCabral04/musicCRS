@@ -27,7 +27,7 @@ through the same `fuse()` that `FusionScorer` uses.
 
 All five equal the logged standalone runs, so `fuse` and the cached lists are correct.
 
-### Grid on val0 (`python -m retrieval.tune_fusion --grid`)
+### Grid on val0 (`python -m retrieval.experiments.tune_fusion --grid`)
 
 `bm25_plus = 1` (RRF only depends on weight ratios); `same_artist`, `bpr_sim`, dense ∈ {0, 0.5, 1, 2, 4};
 dense = `dense` or `dense_last_turn`; 225 sets at k_rrf 60 (504 s), then k_rrf 10 / 30 / 100 on the top 3.
@@ -45,7 +45,7 @@ k_rrf 10 was the lowest value of the sweep, so lower values were checked by hand
 (val0 final): `dense` k=3 / 5 / 10 = 0.2671 / 0.2697 / 0.2713; `dense_last_turn` = 0.2672 / 0.2702 / 0.2715.
 k=10 is a peak, not the edge of a trend.
 
-### Confirmation on val0-2 (`python -m retrieval.tune_fusion --confirm 5`)
+### Confirmation on val0-2 (`python -m retrieval.experiments.tune_fusion --confirm 5`)
 
 | # | k_rrf | dense | nDCG@20 mean | diversity mean | final mean (val0 / val1 / val2) | spread |
 | --- | ---: | --- | ---: | ---: | --- | ---: |
@@ -62,7 +62,7 @@ k=10 is a peak, not the edge of a trend.
   5× the spread. Both metrics rise: nDCG 0.166 → 0.198, diversity 0.44 → 0.59.
 - Every component has a non-zero weight in the top 10: all four lists help.
 
-### End to end (`python -m retrieval.run_experiment --method fusion --split val_all`)
+### End to end (`python -m retrieval.experiments.run_experiment --method fusion --split val_all`)
 
 - Same numbers as `--confirm` #2 on every fold (0.2713 / 0.2820 / 0.2725): the tuning path and
   `FusionScorer` agree. `check_predictions` passed, no empty list (turn 1 is filled by bm25_plus + dense).

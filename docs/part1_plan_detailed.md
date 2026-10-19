@@ -59,8 +59,8 @@ The difference: every task now points to real files, functions, line numbers, da
 | --- | --- | --- |
 | `retrieval/base.py` | `RetrievalModule` abstract class: `text_to_item_retrieval(query, topk)` and `batch_text_to_item_retrieval(queries, topk)` | L9-39 |
 | `retrieval/data_loader.py` | Loads the catalog. `id_to_metadata(track_id)` returns the dict. `id_to_metadata_str` formats it as one string, starting with `track_id: <uuid>` | L31-33, L39-59 |
-| `retrieval/bm25.py` | Builds, caches and queries the BM25 index | L14 (default fields), L36-43 (cache), L45-53 (doc text), L77-80 (query) |
-| `retrieval/run_bm25_baseline.py` | Builds one query per (session, turn), runs BM25, writes predictions | L21-50 (query), L53-91 (loop), L94-111 (CLI) |
+| `retrieval/methods/bm25.py` | Builds, caches and queries the BM25 index | L14 (default fields), L36-43 (cache), L45-53 (doc text), L77-80 (query) |
+| `retrieval/experiments/run_bm25_baseline.py` | Builds one query per (session, turn), runs BM25, writes predictions | L21-50 (query), L53-91 (loop), L94-111 (CLI) |
 | `retrieval/evaluation/evaluate.py` | Official scoring function, also a CLI | L20-65 |
 | `retrieval/evaluation/metrics.py` | nDCG; **raises an error on duplicate predictions** | L9-29, L43-44 |
 | `retrieval/evaluation/diversity.py` | unique recommended IDs / catalog size | L5-11 |
@@ -191,11 +191,11 @@ python -c "import retrieval; print('ok')"
 
 | Area | Owner | Files |
 | --- | --- | --- |
-| Shared harness | **Both** (pair session) | `retrieval/context.py`, `retrieval/run_experiment.py`, `data/val_folds.json` |
-| Improved BM25 | **Worker 1** | `retrieval/bm25_plus.py` |
-| Session signal (same artist + BPR) | **Worker 1** | `retrieval/session_cf.py` |
-| Dense retrieval (Qwen3) | **Worker 2** | `retrieval/dense.py` |
-| Fusion (RRF) + weight tuning | **Worker 2** | `retrieval/fusion.py` |
+| Shared harness | **Both** (pair session) | `retrieval/context.py`, `retrieval/experiments/run_experiment.py`, `data/val_folds.json` |
+| Improved BM25 | **Worker 1** | `retrieval/methods/bm25_plus.py` |
+| Session signal (same artist + BPR) | **Worker 1** | `retrieval/methods/session_cf.py` |
+| Dense retrieval (Qwen3) | **Worker 2** | `retrieval/methods/dense.py` |
+| Fusion (RRF) + weight tuning | **Worker 2** | `retrieval/methods/fusion.py` |
 | Final `RetrievalModule` + test run | **Worker 1** | `retrieval/final_retriever.py` |
 | Diversity analysis | **Worker 2** | `results/diversity_analysis.md` |
 | Experiment logs | each their own | `results/worker1.md`, `results/worker2.md` |
@@ -330,7 +330,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   ```
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --make_val_folds --n_val 1000 --n_folds 3 --seed 42
+  python -m retrieval.experiments.run_experiment --make_val_folds --n_val 1000 --n_folds 3 --seed 42
   python -c "import json; f=json.load(open('data/val_folds.json')); ids=[i for v in f.values() for i in v]; print({k: len(v) for k, v in f.items()}, len(ids) == len(set(ids)), f['val0'][:2])"
   ```
 - **Done when.** The file has 3 × 1,000 unique IDs with no overlap, it is committed, and both of us get the same first two IDs of `val0` when we run it.
@@ -364,7 +364,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   - `_build_retrieval_input` starts with `_`, so it is "private". Importing it is fine. Just don't change it.
   - A played `music` message holds a track ID. Convert it to text only where text is needed (BM25, dense), not inside `TurnContext`.
 
-#### T0.3 `retrieval/run_experiment.py`
+#### T0.3 `retrieval/experiments/run_experiment.py`
 
 - **Objective.** One command runs any method on validation or test and prints the official score and the time per query. Every decision we log comes from this command.
 - **Existing code to reuse.**
@@ -395,10 +395,10 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   ```
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --method bm25_baseline --split test --keep_played   # the starter kit keeps played tracks
-  python -m retrieval.run_experiment --method bm25_baseline --split val           # record this as "baseline on val"
-  python -m retrieval.run_experiment --method bm25_baseline --split val --limit 200
-  python -m retrieval.run_experiment --method bm25_baseline --split val_all       # record the spread = our noise level
+  python -m retrieval.experiments.run_experiment --method bm25_baseline --split test --keep_played   # the starter kit keeps played tracks
+  python -m retrieval.experiments.run_experiment --method bm25_baseline --split val           # record this as "baseline on val"
+  python -m retrieval.experiments.run_experiment --method bm25_baseline --split val --limit 200
+  python -m retrieval.experiments.run_experiment --method bm25_baseline --split val_all       # record the spread = our noise level
   ```
   Look at `ndcg@20`, `catalog_diversity`, `final_score` and `ms/query`.
 - **As built (Oct 2).** The `Scorer` protocol lives in `context.py`. `run()` takes a built scorer (so `val_all` builds it once). Played tracks are removed by default; `--keep_played` turns that off. Results: test 0.1446 (`--keep_played`) / 0.1664 (default); val_all final mean 0.2072, spread 0.0101.
@@ -414,7 +414,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 
 ---
 
-### W1-1 — Improved BM25 → `retrieval/bm25_plus.py` — **Worker 1** (Tue Sep 29 – Thu Oct 1)
+### W1-1 — Improved BM25 → `retrieval/methods/bm25_plus.py` — **Worker 1** (Tue Sep 29 – Thu Oct 1)
 
 - **Objective.** Keep BM25 (fast and explainable) but fix three weak points: (1) it wastes slots on tracks already played, (2) it ignores tags, so genre/mood words don't match, (3) it treats a 7-turn-old message the same as the current request.
 - **Existing code to reuse (inherit from `BM25Retriever`).**
@@ -448,8 +448,8 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   4. (Optional) BM25 `k1`/`b` or a top-N tag cut. Only if the steps above are done.
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --method bm25_plus --split val --limit 200   # quick nDCG check
-  python -m retrieval.run_experiment --method bm25_plus --split val               # the number you log
+  python -m retrieval.experiments.run_experiment --method bm25_plus --split val --limit 200   # quick nDCG check
+  python -m retrieval.experiments.run_experiment --method bm25_plus --split val               # the number you log
   ls cache/bm25/                                                                 # a new track_name_artist_name_album_name_tag_list dir
   ```
 - **Done when.** Each step has a line in `results/worker1.md` (change, val nDCG@20, diversity, final, keep?), and the kept version beats the baseline's val final score.
@@ -467,7 +467,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 
 ---
 
-### W2-1 — Dense retrieval → `retrieval/dense.py` — **Worker 2** (Tue Sep 29 – Thu Oct 1)
+### W2-1 — Dense retrieval → `retrieval/methods/dense.py` — **Worker 2** (Tue Sep 29 – Thu Oct 1)
 
 - **Objective.** Match by meaning ("chill rainy-day indie" ↔ a track tagged mellow/indie folk), which BM25 misses. Embed the query with Qwen3-Embedding-0.6B, the model that made the track vectors, and rank tracks by cosine similarity.
 - **Existing code to reuse.**
@@ -513,9 +513,9 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 - **How to test.**
   ```bash
   pip install torch sentence-transformers              # after agreeing on versions (A VERIFICAR)
-  python -c "from retrieval.dense import sanity_check; sanity_check()"
-  python -m retrieval.run_experiment --method dense --split val --limit 200
-  python -m retrieval.run_experiment --method dense --split val
+  python -c "from retrieval.methods.dense import sanity_check; sanity_check()"
+  python -m retrieval.experiments.run_experiment --method dense --split val --limit 200
+  python -m retrieval.experiments.run_experiment --method dense --split val
   ```
   Look at the median self-rank in the sanity check, and nDCG@20 + `ms/query` in the runs.
 - **Done when.** The sanity check shows a matching setup (or we have written down why it doesn't match), one field/mode is chosen on val and logged in `results/worker2.md`, and `ms/query` is recorded **without** the query cache.
@@ -539,7 +539,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 
 ---
 
-### W1-2 — Session signal → `retrieval/session_cf.py` — **Worker 1** (W1-2a Tue Sep 29 – Thu Oct 1, W1-2b Sat Oct 3 – Sun Oct 4)
+### W1-2 — Session signal → `retrieval/methods/session_cf.py` — **Worker 1** (W1-2a Tue Sep 29 – Thu Oct 1, W1-2b Sat Oct 3 – Sun Oct 4)
 
 - **Why it's split in two.** `same_artist` looks like the biggest single gain, and it needs no embeddings. So a simple version (W1-2a) is built early, next to `bm25_plus.py`. Its lists then exist before fusion starts. W1-2b adds the BPR parts once `dense.py`'s `load_track_matrix` is merged (Oct 2).
 - **W1-2a (early):** `SameArtistScorer` ordered by recency of the matching played track, then `popularity`. It only needs the catalog.
@@ -578,8 +578,8 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   ```
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --method same_artist --split val --limit 200
-  python -m retrieval.run_experiment --method bpr_sim --split val
+  python -m retrieval.experiments.run_experiment --method same_artist --split val --limit 200
+  python -m retrieval.experiments.run_experiment --method bpr_sim --split val
   ```
   Also print, per turn number, the fraction of turns where the gold is in the same-artist list. It should come out near 0.65 for turns 2–8 (a check that the code matches the statistic).
 - **Done when.** Both scorers are logged in `results/worker1.md`, with the per-turn "gold in pool" fraction for `same_artist`.
@@ -595,7 +595,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
 
 ---
 
-### W2-2 — Fusion → `retrieval/fusion.py` — **Worker 2** (Sat Oct 3 – Sun Oct 4)
+### W2-2 — Fusion → `retrieval/methods/fusion.py` — **Worker 2** (Sat Oct 3 – Sun Oct 4)
 
 - **Objective.** Each signal is right on different turns: BM25 when the artist is named, dense for moods, session signals from turn 2 on. RRF combines ranked lists without calibrating scores, and it has only a few knobs to tune.
 - **Existing code to reuse.** The `Scorer` contract (6.2). `finalize_top_k` (6.1). The top-200 lists that `run_experiment.py` saved to `cache/runs/<method>_val_top200.pkl`.
@@ -621,12 +621,12 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   ```
 - **How to test.**
   ```bash
-  python -m retrieval.run_experiment --method bm25_plus   --split val   # these save the top-200 caches
-  python -m retrieval.run_experiment --method dense       --split val
-  python -m retrieval.run_experiment --method same_artist --split val
-  python -m retrieval.run_experiment --method bpr_sim     --split val
-  python -c "from retrieval.fusion import main_grid; main_grid()"       # prints the top 10 weight sets
-  python -m retrieval.run_experiment --method fusion --split val
+  python -m retrieval.experiments.run_experiment --method bm25_plus   --split val   # these save the top-200 caches
+  python -m retrieval.experiments.run_experiment --method dense       --split val
+  python -m retrieval.experiments.run_experiment --method same_artist --split val
+  python -m retrieval.experiments.run_experiment --method bpr_sim     --split val
+  python -c "from retrieval.methods.fusion import main_grid; main_grid()"       # prints the top 10 weight sets
+  python -m retrieval.experiments.run_experiment --method fusion --split val
   ```
 - **Done when.** The best weights and their val final score are logged. The fused val score beats the best single component, **confirmed on `val_all`** (the gain is larger than the spread between folds). The chosen weights are stored as constants in `fusion.py`.
 - **Pitfalls.**
@@ -687,7 +687,7 @@ Two of our strongest ideas come from **patterns of this dataset**, not from how 
   - overlap between components (how many top-20 tracks are shared);
   - how often the same track appears across turns (the top-10 most recommended tracks).
 - **Possible tweak (only if val says so).** Keep positions 1–10 as they are. In positions 11–20, add a small popularity penalty, or prefer candidates not yet shown in this session. Tune on val. Keep it only if final_score goes up.
-- **How to test.** `python -m retrieval.run_experiment --method fusion --split val` before/after the tweak, and compare `catalog_diversity` and `final_score`.
+- **How to test.** `python -m retrieval.experiments.run_experiment --method fusion --split val` before/after the tweak, and compare `catalog_diversity` and `final_score`.
 - **Done when.** The analysis file has a table per component and a decision (keep the tweak or not) backed by val numbers.
 - **Pitfalls.** Diversity is only comparable at the same number of turns. Always use the full val set (no `--limit`) when comparing diversity.
 
@@ -725,7 +725,7 @@ Current state: `origin` = `JPCabral04/musicCRS` (private copy), `upstream` = `ia
 git checkout main && git pull origin main
 git checkout -b worker1/bm25-plus          # or worker2/dense, worker1/session-cf, worker2/fusion
 # ... work, then:
-git add retrieval/bm25_plus.py results/worker1.md
+git add retrieval/methods/bm25_plus.py results/worker1.md
 git commit -m "bm25_plus: add tag_list field"
 git pull origin main                        # resolve conflicts on your own branch
 git push -u origin worker1/bm25-plus        # then open a PR on GitHub; the other person reviews and runs it

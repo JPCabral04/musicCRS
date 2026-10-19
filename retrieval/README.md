@@ -20,7 +20,7 @@ under [Final score](#final-score).
 ### Input and output
 
   - **Input:** a conversation turn, consisting of the dialogue history up to and
-  including the user's current message (see `run_bm25_baseline.py` for how the
+  including the user's current message (see `experiments/run_bm25_baseline.py` for how the
   baseline builds its query from this history).
   - **Output:** a ranked list of up to 20 track IDs from the catalog
   (`talkpl-ai/TalkPlayData-Challenge-Track-Metadata`), most relevant first.
@@ -54,8 +54,19 @@ personalization using user profiles, or reranking with a cross-encoder.
 retrieval/
 ├── base.py               # RetrievalModule abstract interface
 ├── data_loader.py        # MusicCatalogLoader — loads track metadata from Hugging Face
-├── bm25.py                # BM25Retriever — BM25 baseline
-├── run_bm25_baseline.py   # generates BM25 predictions over a dialogue dataset split
+├── context.py            # TurnContext, SessionPolicy, finalize_top_k — shared by all methods
+├── final_retriever.py    # FinalRetriever — the tuned fusion, used by the Part 2 agent
+├── methods/              # one ranker per file (the names used by --method)
+│   ├── bm25.py               # BM25Retriever — BM25 baseline
+│   ├── bm25_plus.py          # BM25 with tags indexed, current message and history scored apart
+│   ├── dense.py              # dense retrieval with Qwen3 embeddings
+│   ├── session_cf.py         # same-artist and BPR-similarity scorers
+│   └── fusion.py             # weighted reciprocal rank fusion of the above
+├── experiments/          # scripts run from the terminal
+│   ├── run_bm25_baseline.py  # generates BM25 predictions over a dialogue dataset split
+│   ├── run_experiment.py     # runs any method on test / val folds, caches runs
+│   └── tune_fusion.py        # grid search for the fusion weights
+├── analysis/             # dataset statistics behind design choices
 └── evaluation/
     ├── metrics.py             # nDCG
     ├── diversity.py           # item (catalog) diversity
@@ -93,7 +104,7 @@ retriever.batch_text_to_item_retrieval(["upbeat pop song", "sad piano ballad"], 
 Your method will be evaluated on the `test` split (the devset):
 
 ```bash
-python3 -m retrieval.run_bm25_baseline --split test --topk 20 --output predictions.json   # or your own runner
+python3 -m retrieval.experiments.run_bm25_baseline --split test --topk 20 --output predictions.json   # or your own runner
 python3 -m retrieval.evaluation.evaluate --predictions predictions.json --ground_truth ground_truth.json --catalog_size 47071
 ```
 
@@ -110,7 +121,7 @@ python3 -m retrieval.evaluation.make_ground_truth --split test --output path/to/
 
 ### Generating BM25 predictions
 
-`run_bm25_baseline.py` retrieves top-k track IDs for every session x turn in a
+`experiments/run_bm25_baseline.py` retrieves top-k track IDs for every session x turn in a
 dialogue dataset split. The query is the full conversation history up to and
 including that turn's user message (prior `music` turns are expanded to
 track metadata), matching the retrieval input built in
@@ -119,7 +130,7 @@ or response generation — retrieval only, so `predicted_response` is left
 empty:
 
 ```bash
-python3 -m retrieval.run_bm25_baseline --split test --topk 20 --output path/to/predictions.json
+python3 -m retrieval.experiments.run_bm25_baseline --split test --topk 20 --output path/to/predictions.json
 ```
 
 ### Scoring predictions
