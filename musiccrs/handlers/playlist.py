@@ -1,6 +1,6 @@
 """Playlist handlers: ADD, REMOVE, SHOW, CLEAR (R2), R4 disambiguation, and HELP (R3).
 
-T7, T8 & T12 implementation by Alejandro. Replaces the T2 skeleton.
+T7, T8 & T12 implementation. Replaces the T2 skeleton.
 """
 import html
 import numpy as np

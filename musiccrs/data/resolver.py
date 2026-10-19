@@ -1,5 +1,5 @@
 """
-Track Resolver (T6) - Alejandro
+Track Resolver (T6)
 Given a loose track reference (and optionally an artist), finds the matching
 tracks in the library database (TrackDB).
 """

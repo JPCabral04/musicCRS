@@ -20,6 +20,7 @@ import {
 import { AgentChatMessage, UserChatMessage } from "../ChatMessage";
 import { ChatMessage } from "../../types";
 import { ConfigContext } from "../../contexts/ConfigContext";
+import { PlaylistPanel } from "../Playlist/PlaylistPanel";
 
 export default function ChatBox() {
   const { config } = useContext(ConfigContext);
@@ -35,6 +36,8 @@ export default function ChatBox() {
   const [chatMessages, setChatMessages] = useState<JSX.Element[]>([]);
   const [chatButtons, setChatButtons] = useState<JSX.Element[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
+  const [rawMessages, setRawMessages] = useState<ChatMessage[]>([]);
+  
   const chatMessagesRef = useRef(chatMessages);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +64,17 @@ export default function ChatBox() {
     if (inputRef.current) {
       inputRef.current.value = "";
     }
+  };
+
+  const handleSendMessageString = (msgText: string) => {
+    if (msgText.trim() === "") return;
+    updateMessages(
+      <UserChatMessage
+        key={chatMessagesRef.current.length}
+        message={msgText}
+      />
+    );
+    sendMessage({ message: msgText });
   };
 
   const handleQuickReply = useCallback(
@@ -122,6 +136,7 @@ export default function ChatBox() {
 
   useEffect(() => {
     onMessage((message: ChatMessage) => {
+      setRawMessages((prev) => [...prev, message]);
       handelMessage(message);
       handleButtons(message);
     });
@@ -131,51 +146,59 @@ export default function ChatBox() {
     onRestart(() => {
       setChatMessages([]);
       setChatButtons([]);
+      setRawMessages([]);
     });
   }, [onRestart]);
 
   return (
-    <div className="chat-widget-content">
-      <MDBCard
-        id="chatBox"
-        className="chat-widget-card"
-        style={{ borderRadius: "15px" }}
-      >
-        <MDBCardHeader
-          className="d-flex justify-content-between align-items-center p-3 bg-info text-white border-bottom-0"
-          style={{
-            borderTopLeftRadius: "15px",
-            borderTopRightRadius: "15px",
-          }}
+    <div style={{ display: "flex", gap: "16px", width: "100%", height: "100%" }}>
+      <div className="chat-widget-content" style={{ flex: 1 }}>
+        <MDBCard
+          id="chatBox"
+          className="chat-widget-card"
+          style={{ borderRadius: "15px" }}
         >
-          <p className="mb-0 fw-bold">{config.name}</p>
-          <p className="mb-0 fw-bold">{user?.username}</p>
-        </MDBCardHeader>
+          <MDBCardHeader
+            className="d-flex justify-content-between align-items-center p-3 bg-info text-white border-bottom-0"
+            style={{
+              borderTopLeftRadius: "15px",
+              borderTopRightRadius: "15px",
+            }}
+          >
+            <p className="mb-0 fw-bold">{config.name}</p>
+            <p className="mb-0 fw-bold">{user?.username}</p>
+          </MDBCardHeader>
 
-        <MDBCardBody>
-          <div className="card-body-messages">
-            {chatMessages}
-            <div className="d-flex flex-wrap justify-content-between">
-              {chatButtons}
+          <MDBCardBody>
+            <div className="card-body-messages">
+              {chatMessages}
+              <div className="d-flex flex-wrap justify-content-between">
+                {chatButtons}
+              </div>
             </div>
-          </div>
-        </MDBCardBody>
-        <MDBCardFooter className="text-muted d-flex justify-content-start align-items-center p-2">
-          <form className="d-flex flex-grow-1" onSubmit={handleInput}>
-            <input
-              type="text"
-              className="form-control form-control-lg"
-              id="ChatInput"
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Type message"
-              ref={inputRef}
-            ></input>
-            <button type="submit" className="btn btn-link text-muted">
-              <MDBIcon fas size="2x" icon="paper-plane" />
-            </button>
-          </form>
-        </MDBCardFooter>
-      </MDBCard>
+          </MDBCardBody>
+          <MDBCardFooter className="text-muted d-flex justify-content-start align-items-center p-2">
+            <form className="d-flex flex-grow-1" onSubmit={handleInput}>
+              <input
+                type="text"
+                className="form-control form-control-lg"
+                id="ChatInput"
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Type message"
+                ref={inputRef}
+              ></input>
+              <button type="submit" className="btn btn-link text-muted">
+                <MDBIcon fas size="2x" icon="paper-plane" />
+              </button>
+            </form>
+          </MDBCardFooter>
+        </MDBCard>
+      </div>
+
+      <PlaylistPanel
+        messages={rawMessages}
+        onSendMessage={handleSendMessageString}
+      />
     </div>
   );
 }
