@@ -11,8 +11,8 @@ Usage:
 """
 import numpy as np
 
-from .context import TurnContext
-from .data_loader import MusicCatalogLoader
+from ..context import TurnContext
+from ..data_loader import MusicCatalogLoader
 from .dense import load_track_matrix
 
 

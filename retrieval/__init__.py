@@ -6,6 +6,6 @@ Adapted from the RecSys 2026 MusicCRS challenge baselines.
 """
 from .base import RetrievalModule
 from .data_loader import MusicCatalogLoader
-from .bm25 import BM25Retriever
+from .methods.bm25 import BM25Retriever
 
 __all__ = ["RetrievalModule", "MusicCatalogLoader", "BM25Retriever"]

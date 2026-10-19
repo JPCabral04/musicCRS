@@ -8,8 +8,8 @@ import os
 import json
 import bm25s
 
-from .base import RetrievalModule
-from .data_loader import MusicCatalogLoader, DEFAULT_DATASET_NAME, DEFAULT_SPLIT_TYPES
+from ..base import RetrievalModule
+from ..data_loader import MusicCatalogLoader, DEFAULT_DATASET_NAME, DEFAULT_SPLIT_TYPES
 
 DEFAULT_CORPUS_TYPES = ["track_name", "artist_name", "album_name"]
 

@@ -15,8 +15,8 @@ Usage:
     python -m retrieval.run_experiment --method fusion --split val
 """
 from .bm25_plus import BM25PlusRetriever
-from .context import Scorer, SessionPolicy, TurnContext
-from .data_loader import MusicCatalogLoader
+from ..context import Scorer, SessionPolicy, TurnContext
+from ..data_loader import MusicCatalogLoader
 from .dense import DenseScorer
 from .session_cf import BPRSimilarityScorer, SameArtistScorer
 

@@ -18,7 +18,7 @@ import time
 
 from .base import RetrievalModule
 from .context import SessionPolicy, TurnContext, finalize_top_k, iter_turn_contexts
-from .fusion import build_fusion
+from .methods.fusion import build_fusion
 from .run_experiment import FOLDS, check_predictions, sessions_for
 
 

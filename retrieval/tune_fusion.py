@@ -25,7 +25,7 @@ import time
 from .context import finalize_top_k, iter_turn_contexts
 from .data_loader import MusicCatalogLoader
 from .evaluation.evaluate import evaluate
-from .fusion import K_RRF, fuse
+from .methods.fusion import K_RRF, fuse
 from .run_experiment import (CATALOG_SIZE, FOLDS, REPORT_METRICS, RUNS_DIR,
                              ground_truth_for, sessions_for)
 

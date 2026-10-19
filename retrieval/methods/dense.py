@@ -10,10 +10,10 @@ a run's queries in batches (on the GPU if there is one) before scoring.
 
 Usage:
     # Sanity check: does our encoder match the precomputed vectors?
-    python -m retrieval.dense
+    python -m retrieval.methods.dense
 
     # Live latency of one query (no cache), on val0 messages
-    python -m retrieval.dense --time 100
+    python -m retrieval.methods.dense --time 100
 
     # Run experiment via harness
     python -m retrieval.run_experiment --method dense --split val
@@ -27,8 +27,8 @@ import numpy as np
 from typing import Tuple, List, Optional
 from datasets import load_dataset
 
-from .context import TurnContext
-from .data_loader import MusicCatalogLoader
+from ..context import TurnContext
+from ..data_loader import MusicCatalogLoader
 
 EMB_DATASET = "talkpl-ai/TalkPlayData-Challenge-Track-Embeddings"
 DEFAULT_FIELD = "metadata-qwen3_embedding_0.6b"
@@ -288,8 +288,8 @@ def time_live_queries(n: int = 100) -> None:
     This is the latency the Part 2 agent pays per turn; the runner's ms/query
     only measures cache lookups once `prepare` has run.
     """
-    from .context import iter_turn_contexts
-    from .run_experiment import sessions_for  # local import: run_experiment imports this module
+    from ..context import iter_turn_contexts
+    from ..run_experiment import sessions_for  # local import: run_experiment imports this module
 
     scorer = DenseScorer()
     contexts = list(iter_turn_contexts(sessions_for("val", n // 8 + 1), scorer.catalog))[:n]

@@ -15,7 +15,7 @@ import bm25s
 import numpy as np
 
 from .bm25 import BM25Retriever
-from .context import TurnContext
+from ..context import TurnContext
 
 DEFAULT_CORPUS_TYPES_PLUS = ["track_name", "artist_name", "album_name", "tag_list"]
 # Fields of a played track added to the history query (no track_id: a UUID is noise).
