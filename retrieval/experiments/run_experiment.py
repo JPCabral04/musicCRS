@@ -12,11 +12,11 @@ By default played tracks are removed (SessionPolicy defaults); `--keep_played`
 reproduces the starter-kit baseline, which keeps them.
 
 Usage:
-    python -m retrieval.run_experiment --make_val_folds
-    python -m retrieval.run_experiment --method bm25_baseline --split test --keep_played   # 0.1446
-    python -m retrieval.run_experiment --method bm25_baseline --split val
-    python -m retrieval.run_experiment --method bm25_baseline --split val --limit 200     # nDCG only
-    python -m retrieval.run_experiment --method bm25_baseline --split val_all             # mean + spread
+    python -m retrieval.experiments.run_experiment --make_val_folds
+    python -m retrieval.experiments.run_experiment --method bm25_baseline --split test --keep_played   # 0.1446
+    python -m retrieval.experiments.run_experiment --method bm25_baseline --split val
+    python -m retrieval.experiments.run_experiment --method bm25_baseline --split val --limit 200     # nDCG only
+    python -m retrieval.experiments.run_experiment --method bm25_baseline --split val_all             # mean + spread
 """
 import argparse
 import json
@@ -28,16 +28,16 @@ from collections.abc import Callable
 
 from datasets import load_dataset
 
-from .methods.bm25 import BM25Retriever
-from .methods.bm25_plus import BM25PlusRetriever
-from .context import (Scorer, SessionPolicy, TurnContext, finalize_top_k,
+from ..methods.bm25 import BM25Retriever
+from ..methods.bm25_plus import BM25PlusRetriever
+from ..context import (Scorer, SessionPolicy, TurnContext, finalize_top_k,
                       iter_turn_contexts, load_sessions)
-from .data_loader import MusicCatalogLoader
-from .evaluation.evaluate import evaluate
-from .evaluation.make_ground_truth import make_ground_truth
-from .methods.session_cf import SameArtistScorer, BPRSimilarityScorer
-from .methods.dense import DenseScorer
-from .methods.fusion import build_fusion
+from ..data_loader import MusicCatalogLoader
+from ..evaluation.evaluate import evaluate
+from ..evaluation.make_ground_truth import make_ground_truth
+from ..methods.session_cf import SameArtistScorer, BPRSimilarityScorer
+from ..methods.dense import DenseScorer
+from ..methods.fusion import build_fusion
 
 DATASET = "talkpl-ai/TalkPlayData-Challenge-Dataset"
 VAL_FOLDS_PATH = "data/val_folds.json"

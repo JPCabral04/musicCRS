@@ -12,7 +12,7 @@ SessionPolicy is applied here, once: played tracks leave every list before RRF
 so weights tuned on the cached lists (`tune_fusion.py`) are copied here as is.
 
 Usage:
-    python -m retrieval.run_experiment --method fusion --split val
+    python -m retrieval.experiments.run_experiment --method fusion --split val
 """
 from .bm25_plus import BM25PlusRetriever
 from ..context import Scorer, SessionPolicy, TurnContext

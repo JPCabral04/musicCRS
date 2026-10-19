@@ -10,10 +10,10 @@ RRF ranks only depend on the weights' ratios (doubling all weights changes
 nothing), so `bm25_plus` stays at 1 and only the other weights move.
 
 Usage:
-    python -m retrieval.run_experiment --method <each component> --split val_all   # the caches
-    python -m retrieval.tune_fusion --check        # each component alone = its standalone val0 score
-    python -m retrieval.tune_fusion --grid         # val0 only: all weight sets, saves the ranking
-    python -m retrieval.tune_fusion --confirm 5    # top 5 of the grid on val0, val1, val2
+    python -m retrieval.experiments.run_experiment --method <each component> --split val_all   # the caches
+    python -m retrieval.experiments.tune_fusion --check        # each component alone = its standalone val0 score
+    python -m retrieval.experiments.tune_fusion --grid         # val0 only: all weight sets, saves the ranking
+    python -m retrieval.experiments.tune_fusion --confirm 5    # top 5 of the grid on val0, val1, val2
 """
 import argparse
 import itertools
@@ -22,10 +22,10 @@ import os
 import pickle
 import time
 
-from .context import finalize_top_k, iter_turn_contexts
-from .data_loader import MusicCatalogLoader
-from .evaluation.evaluate import evaluate
-from .methods.fusion import K_RRF, fuse
+from ..context import finalize_top_k, iter_turn_contexts
+from ..data_loader import MusicCatalogLoader
+from ..evaluation.evaluate import evaluate
+from ..methods.fusion import K_RRF, fuse
 from .run_experiment import (CATALOG_SIZE, FOLDS, REPORT_METRICS, RUNS_DIR,
                              ground_truth_for, sessions_for)
 

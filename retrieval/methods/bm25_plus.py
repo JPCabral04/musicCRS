@@ -9,7 +9,7 @@ mostly from the tags. Played tracks are NOT removed here: SessionPolicy does
 that once, in fusion and finalize_top_k.
 
 Usage:
-    python -m retrieval.run_experiment --method bm25_plus --split val
+    python -m retrieval.experiments.run_experiment --method bm25_plus --split val
 """
 import bm25s
 import numpy as np

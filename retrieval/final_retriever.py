@@ -19,7 +19,7 @@ import time
 from .base import RetrievalModule
 from .context import SessionPolicy, TurnContext, finalize_top_k, iter_turn_contexts
 from .methods.fusion import build_fusion
-from .run_experiment import FOLDS, check_predictions, sessions_for
+from .experiments.run_experiment import FOLDS, check_predictions, sessions_for
 
 
 class FinalRetriever(RetrievalModule):

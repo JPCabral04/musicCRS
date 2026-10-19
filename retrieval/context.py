@@ -22,7 +22,7 @@ from .analysis.same_artist_stats import _played_tracks_by_turn
 from .methods.bm25 import DEFAULT_CORPUS_TYPES
 from .data_loader import MusicCatalogLoader
 from .evaluation.make_ground_truth import DEFAULT_DATASET_NAME
-from .run_bm25_baseline import NUM_TURNS, _build_retrieval_input
+from .experiments.run_bm25_baseline import NUM_TURNS, _build_retrieval_input
 
 
 @dataclass(frozen=True)

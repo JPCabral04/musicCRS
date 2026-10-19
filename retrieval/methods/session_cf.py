@@ -6,8 +6,8 @@ track, and that pool is small (~60 tracks). Played tracks are NOT removed here:
 SessionPolicy does that once, in fusion and finalize_top_k.
 
 Usage:
-    python -m retrieval.run_experiment --method same_artist --split val
-    python -m retrieval.run_experiment --method bpr_sim --split val
+    python -m retrieval.experiments.run_experiment --method same_artist --split val
+    python -m retrieval.experiments.run_experiment --method bpr_sim --split val
 """
 import numpy as np
 

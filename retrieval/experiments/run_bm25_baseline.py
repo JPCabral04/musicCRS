@@ -12,8 +12,8 @@ import json
 
 from datasets import load_dataset
 
-from .methods.bm25 import BM25Retriever, DEFAULT_CORPUS_TYPES
-from .data_loader import MusicCatalogLoader
+from ..methods.bm25 import BM25Retriever, DEFAULT_CORPUS_TYPES
+from ..data_loader import MusicCatalogLoader
 
 NUM_TURNS = 8
 

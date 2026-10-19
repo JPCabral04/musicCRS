@@ -16,7 +16,7 @@ Usage:
     python -m retrieval.methods.dense --time 100
 
     # Run experiment via harness
-    python -m retrieval.run_experiment --method dense --split val
+    python -m retrieval.experiments.run_experiment --method dense --split val
 """
 
 import argparse
@@ -289,7 +289,7 @@ def time_live_queries(n: int = 100) -> None:
     only measures cache lookups once `prepare` has run.
     """
     from ..context import iter_turn_contexts
-    from ..run_experiment import sessions_for  # local import: run_experiment imports this module
+    from ..experiments.run_experiment import sessions_for  # local import: run_experiment imports this module
 
     scorer = DenseScorer()
     contexts = list(iter_turn_contexts(sessions_for("val", n // 8 + 1), scorer.catalog))[:n]
