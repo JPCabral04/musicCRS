@@ -105,6 +105,15 @@ def playlist_act(state, db):
     return DialogueAct(intent=_INTENT_PLAYLIST, annotations=annotations)
 
 
+def print_turn_time(intent_name, start):
+    """Print how long one turn took, in the backend terminal (T13 latency check).
+
+    intent_name="ADD", start 0.812 s ago -> prints "[ADD] 812 ms"
+    """
+    milliseconds = (time.perf_counter() - start) * 1000
+    print("[" + intent_name + "] " + str(round(milliseconds)) + " ms")
+
+
 class MusicCRS(Agent):
     def __init__(self, agent_id="MusicCRS"):
         """One agent per browser tab.
@@ -143,11 +152,15 @@ class MusicCRS(Agent):
 
         parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed.
         """
+        # Start the clock: the time printed at the end covers the whole turn.
+        start = time.perf_counter()
+
         # 1. Understand the message: slash commands by rules, other text by one LLM call.
         parsed = parse(utterance.text, self.state, self.services.llm)
 
         if parsed.name == "QUIT":
             self.goodbye()
+            print_turn_time(parsed.name, start)
             return
 
         # 2. Copy the playlist, to see afterwards whether the handler changed it.
@@ -175,6 +188,7 @@ class MusicCRS(Agent):
                 dialogue_acts=dialogue_acts,
             )
         )
+        print_turn_time(parsed.name, start)
 
 
 if __name__ == "__main__":
