@@ -29,9 +29,22 @@ from .state import DialogueState, Reply, Services
 _INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
 
+
+def handle_greeting(parsed, state, services):
+    """Reply to a greeting ("hello", "hi", "thanks") with what the agent can do.
+
+    "Hello!" -> "Hi! I can add and remove songs in your playlist, ..."
+    """
+    text = ("Hi! I can add and remove songs in your playlist, answer questions about "
+            "songs and artists, recommend songs for your playlist, and make a whole "
+            "playlist from a description. Type /help to see examples.")
+    return Reply(text)
+
+
 # Intent name -> handler function. Every handler is handler(parsed, state, services) -> Reply.
 # Each new task adds its own lines (RECOMMEND in T4, HELP in T12, ...).
 HANDLERS = {
+    "GREETING": handle_greeting,
     "ADD": handle_add,
     "REMOVE": handle_remove,
     "SHOW": handle_show,
