@@ -251,7 +251,7 @@ class Services:                     # created once in main, shared by every agen
 | --- | --- |
 | R6 recommend | `recommend_context(playlist)` = `TurnContext(played_track_ids=tuple(playlist), history=(("music", id), ...) one per playlist track, current_message="", turn_number=len(playlist)+1)`, `SessionPolicy()` → songs already in the playlist are never recommended. The `history` entries let bm25_plus search the playlist's names, artists and albums (with `history=()` it would get two empty queries). The message is empty because "recommend me something" is not a music query (and dense then returns nothing) |
 | R6 + "something different" / "other artists" (`different` slot) | `SessionPolicy(use_same_artist=False)`, 50 candidates, then every track sharing an artist with the playlist is dropped (BPR and BM25 still favour the playlist's artists, so the policy alone is not enough) |
-| R8 from scratch | `text_to_item_retrieval(query)` → no played tracks, so only bm25_plus and dense contribute |
+| R8 from scratch | `plan_playlist(description)` → LLM query + minutes, then `text_to_item_retrieval(query, playlist_length(minutes))` → no played tracks, so only bm25_plus and dense contribute; the result replaces the playlist |
 
 ---
 
@@ -332,12 +332,19 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - LLM calls: 0 beyond the parser.
 - Done when: "add Love" shows 5 sensible options; with a rock playlist, rock versions rank higher.
 
-### T9 — R8 playlist from a description · **JP** · Sun Oct 18
+### T9 — R8 playlist from a description · **JP** · Mon Oct 19 – Tue Oct 20
 
 - File: `musiccrs/handlers/recs.py` (CREATE_PLAYLIST).
-- Notes: one LLM call returns `{"query": "...", "minutes": N}`. If no duration is implied, `minutes` comes from the activity (gym ≈ 60, a party is longer, "a few songs" is short). Length = `round(minutes * 60 / mean_duration)`, clamped 8–25 (mean duration in §2). Then `text_to_item_retrieval(query, topk=length)`. Ask before replacing a non-empty playlist, or show the result as a proposal (A VERIFICAR: decide in T9).
-- LLM calls: 1.
+- Notes: one LLM call returns `{"query": "...", "minutes": N}`. If no duration is implied, `minutes` comes from the activity (gym ≈ 60, a party is longer, "a few songs" is short). Length = `round(minutes * 60 / mean_duration)`, clamped 8–25 (mean duration in §2). Then `text_to_item_retrieval(query, topk=length)`.
+- LLM calls: 1 (2 with a retry), plus the parser.
 - Done when: 3 descriptions give relevant playlists of different lengths, and the length rule is written in the code comment.
+- Result (Oct 20): **done**. `python -m musiccrs.checks.check_playlist`: "sad love songs" → 11 songs (45 min), "energetic music for a gym session" → 15 (60), "a few songs for a short coffee break" → 8 (15), "music for a long road trip" → 25 (120); **0.8 s** mean per handler call (plan LLM call + retrieval, max 1.5 s); whole turn with the parser ≈ 1.5–3.4 s (the first dense encode after startup is the slowest).
+- Decision (open item 7): the new playlist **replaces** the current one, and the reply says "It replaced your previous playlist of N songs". The songs are not shown as options (the spec asks for a playlist created automatically), and the old pending options are cleared.
+- `plan_playlist`: the query and the minutes are checked separately; an empty query → the description; minutes not a number, a bool, or outside 5–300 → 45 (`DEFAULT_MINUTES`, 11 songs). No LLM client → the description and 45 min, so R8 still works without the key (always 11 songs).
+- Prompt rule added after the first run: no place or activity word in the query. "gym" is a tag of only 30 tracks but is in 17 names and artists, so "the gym" gave Gym Class Heroes ×4; mood words ("energetic" 1,624 tags, 0 names) do not have that problem. Known limit: bm25_plus searches titles and artists together with tags, so words like "coffee" or "road" still pull matching titles (6 "Coffee" titles for the coffee break). A tag-only search would fix it but changes the Part 1 retriever.
+- No per-artist cap: at most 2 songs by one artist in every checked playlist.
+- Files: `musiccrs/handlers/recs.py` (`MEAN_TRACK_SECONDS`, `MIN_LENGTH`, `MAX_LENGTH`, `DEFAULT_MINUTES`, `PLAYLIST_PROMPT`, `playlist_length`, `plan_playlist`, `handle_create_playlist`), `musiccrs/musiccrs.py` (`CREATE_PLAYLIST` in `HANDLERS`), `musiccrs/checks/check_playlist.py`.
+- Parser limit seen (T3): "now give me sad love songs instead" → RECOMMEND `{"different": true}`, not CREATE_PLAYLIST. "make me a playlist of ..." / "make me a playlist for ..." work.
 
 ### T10 — R5 questions · **Alejandro** · Mon Oct 19 – Tue Oct 20
 
@@ -418,7 +425,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 | ADD / REMOVE / SHOW / CLEAR / HELP | 1 (parser) | SQLite + fuzzy | ≈ 1 LLM call |
 | ASK_TRACK / ASK_ARTIST | 1 | SQLite | ≈ 1 LLM call |
 | RECOMMEND | 1 | `FinalRetriever`, measured in T4: 10 ms per call (empty message, so no dense encode) | ≈ 1 LLM call |
-| CREATE_PLAYLIST | 2 | retrieval | ≈ 2 calls + 0.5 s |
+| CREATE_PLAYLIST | 2 (parser + plan), 3 with a retry | measured in T9: 0.8 s mean per handler call (plan call + retrieval with a live dense encode); 1.5–3.4 s per turn | ≈ 2 calls + 0.3 s |
 | SELECT | 1 (rules) or 2 (LLM fallback) | measured in T11: 0.4–1.1 s per turn; LLM fallback 344 ms mean | ≈ 1–2 calls |
 
 - Startup: catalog + BM25 index + embeddings + the Qwen3 model take **45–51 s** (measured in T4 on JP's GPU laptop), **once**. This is fine. Part of it is the catalog loaded twice (`BM25PlusRetriever` and `DenseScorer` each create a `MusicCatalogLoader`).
@@ -428,7 +435,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 
 ## 8. Git workflow
 
-- Branches: `jp/db`, `jp/agent-skeleton`, `jp/nlu`, `jp/recommend`, `jp/selection`, `ale/playlist-panel`, `ale/resolver`, `ale/playlist-handlers`, `ale/qa`.
+- Branches: `jp/db`, `jp/agent-skeleton`, `jp/nlu`, `jp/recommend`, `jp/selection`, `jp/create-playlist`, `ale/playlist-panel`, `ale/resolver`, `ale/playlist-handlers`, `ale/qa`.
 - PR → the other person pulls, runs, reviews → merge into `main`. Small commits, one logical change each.
 - Never commit: `cache/` (the DB), the API key, the upload token.
 
@@ -457,7 +464,7 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 5. R5 "who sings Hotel California?", "how many songs by Queen do you have?" (+ the other types)
 6. R6 "recommend me something" → R7 "add all except the one by X" (X = an artist actually in the list; not Metallica, which has one catalog track)
 7. R2 "remove the Eagles song", "clear my playlist"
-8. R8 "make me a playlist for a long run"
+8. R8 "make me a playlist of sad love songs", then "energetic music for a gym session" (different lengths, the second replaces the first; avoid descriptions whose key word is common in titles, like "run" or "night")
 
 ---
 
@@ -469,5 +476,5 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 4. Open WebUI key works; the latency of one Gemma 4 31B call from our network.
 5. Whether `rapidfuzz` is worth a new dependency, or FTS5 + `difflib` is enough.
 6. Which phrasings the simulator's persona dialogues actually use (read the first `--no-upload` run).
-7. R8: replace the current playlist, or propose and ask? (decide in T9).
+7. ~~R8: replace the current playlist, or propose and ask?~~ — resolved Oct 20 (T9): replace, and say so in the reply.
 8. Memory and startup time of `FinalRetriever` on the laptop used for the demo (JP's GPU laptop: 45–51 s startup, 10 ms per R6 call; not yet measured on a CPU-only laptop).

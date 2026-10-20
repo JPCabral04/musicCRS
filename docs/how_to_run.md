@@ -1,9 +1,9 @@
 # How to run and test MusicCRS
 
 Steps to start the agent and the chat UI, and to check in the browser that the agent works.
-State: after T11 (Oct 19). Done: slash commands (T2), natural language (T3), recommendations (T4,
-R6), choosing among recommendations (T11, R7). Not yet: the playlist panel (T5), loose names and
-choosing among same-name songs (T6–T8), playlist from a description (T9), questions (T10), help (T12).
+State: after T9 (Oct 20). Done: slash commands (T2), natural language (T3), recommendations (T4,
+R6), choosing among recommendations (T11, R7), playlist from a description (T9, R8). Not yet: the
+playlist panel (T5), loose names and choosing among same-name songs (T6–T8), questions (T10), help (T12).
 
 All commands are for **Git Bash**, from the **repo root**.
 
@@ -136,12 +136,32 @@ depend on the playlist, so yours may differ; pick the artist to exclude from the
 - Choices other than all / none / ordinals ("the Coldplay one", "everything but Toxic") go to the LLM.
 - Don't use Metallica in an "except" test: the catalog has only one Metallica track.
 
-### 3.4 Command-line checks (no browser)
+### 3.4 Playlist from a description (T9, R8)
+
+Open a **new tab** (empty playlist). The songs come from the LLM's query, so yours may differ.
+
+| # | Type | Expected reply | `PLAYLIST` act |
+| --- | --- | --- | --- |
+| 26 | `make me a playlist of sad love songs` | "Here is a playlist for 'sad love songs': 11 songs, about 41 minutes (I aimed for about 45 minutes)." + the songs (Oct 20: Frank Ocean, Neil Young, Lana Del Rey, Khalid, ...) | yes, 11 tracks |
+| 27 | `now make me one with energetic music for a gym session` | 15 songs, about 62 minutes (aimed 60) + "It replaced your previous playlist of 11 songs." | yes, 15 tracks |
+| 28 | `recommend me something` | 5 songs based on the new playlist | no (`OPTIONS`) |
+| 29 | `add the first one` | Added to your playlist: the first song of row 28 | yes, 16 tracks |
+| 30 | `create a playlist for a dinner party` | 23 songs, about 97 minutes (aimed 90) + "It replaced your previous playlist of 16 songs." | yes, 23 tracks |
+
+- **The T9 "done when"**: rows 26, 27 and 30 give playlists of different lengths (11, 15, 23), chosen from
+  the description without asking. Each costs 2 LLM calls (parser + plan): 1–3 s per turn, the first the slowest.
+- The new playlist always **replaces** the old one, and the reply says so.
+- Without the key, R8 cannot be reached (it needs the parser); the handler itself falls back to the
+  description as the query and 45 minutes (11 songs).
+- Phrase it as "make me a playlist of / for ...": "now give me sad love songs instead" is parsed as RECOMMEND.
+
+### 3.5 Command-line checks (no browser)
 
 ```bash
-python -m musiccrs.checks.check_nlu      # T3: 37/37 sentences, ms per parse (needs the key)
-python -m musiccrs.checks.check_recs     # T4: rock / jazz / pop playlists, 5 new songs each (~50 s load)
-python -m musiccrs.checks.check_select   # T11: 16 rule cases; 6 LLM cases with the key
+python -m musiccrs.checks.check_nlu        # T3: 37/37 sentences, ms per parse (needs the key)
+python -m musiccrs.checks.check_recs       # T4: rock / jazz / pop playlists, 5 new songs each (~50 s load)
+python -m musiccrs.checks.check_select     # T11: 16 rule cases; 6 LLM cases with the key
+python -m musiccrs.checks.check_playlist   # T9: length rule + 4 descriptions (~50 s load; lengths differ only with the key)
 ```
 
 Each ends with `OK ...` and exits with code 1 if a case fails.
