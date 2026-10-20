@@ -20,7 +20,7 @@ from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
 from .handlers.playlist import handle_add, handle_clear, handle_remove, handle_show
-from .handlers.recs import handle_recommend
+from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
 from .llm import create_client
 from .nlu.parser import parse
@@ -37,6 +37,7 @@ HANDLERS = {
     "SHOW": handle_show,
     "CLEAR": handle_clear,
     "RECOMMEND": handle_recommend,
+    "CREATE_PLAYLIST": handle_create_playlist,
     "SELECT": handle_select,
 }
 
