@@ -77,6 +77,9 @@ def create_services(use_llm=True):
     print("Loading the retriever...")
     start = time.perf_counter()
     retriever = FinalRetriever()
+    # One search right away, so the first user does not pay the first-call cost
+    # (the first dense encode on the GPU took 894 ms, the next ones about 150 ms, Oct 20).
+    retriever.text_to_item_retrieval("warm up", 1)
     seconds = time.perf_counter() - start
     print("Retriever loaded in " + str(round(seconds, 1)) + " s.")
 
