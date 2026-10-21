@@ -19,31 +19,46 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
-from .handlers.playlist import handle_add, handle_clear, handle_remove, handle_show
+from .handlers.playlist import handle_add, handle_clear, handle_help, handle_remove, handle_show
+from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
 from .llm import create_client
 from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
 
-_INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
 
+
+def handle_greeting(parsed, state, services):
+    """Reply to a greeting ("hello", "hi", "thanks") with what the agent can do.
+
+    "Hello!" -> "Hi! I can add and remove songs in your playlist, ..."
+    """
+    text = ("Hi! I can add and remove songs in your playlist, answer questions about "
+            "songs and artists, recommend songs for your playlist, and make a whole "
+            "playlist from a description. Type /help to see examples.")
+    return Reply(text)
+
+
 # Intent name -> handler function. Every handler is handler(parsed, state, services) -> Reply.
-# Each new task adds its own lines (RECOMMEND in T4, HELP in T12, ...).
+# QUIT has no handler: receive_utterance ends the conversation itself.
 HANDLERS = {
+    "GREETING": handle_greeting,
     "ADD": handle_add,
     "REMOVE": handle_remove,
     "SHOW": handle_show,
     "CLEAR": handle_clear,
+    "HELP": handle_help,
     "RECOMMEND": handle_recommend,
     "CREATE_PLAYLIST": handle_create_playlist,
     "SELECT": handle_select,
+    "ASK_TRACK": handle_ask_track,
+    "ASK_ARTIST": handle_ask_artist,
 }
 
-# Shown when the agent cannot handle a message (until the HELP handler of T12 exists).
-COMMANDS_TEXT = ("You can use: /add artist: track, /del artist: track, "
-                 "/list, /clear, /recommend, /quit.")
+# Shown when the agent cannot handle a message.
+COMMANDS_TEXT = ("Ask me 'what can you do?' or type /help to see what I can do.")
 
 # The heavy objects (DB, retriever, LLM client), shared by every agent.
 # Set once in __main__ below, before the server accepts any connection.
@@ -64,6 +79,9 @@ def create_services(use_llm=True):
     print("Loading the retriever...")
     start = time.perf_counter()
     retriever = FinalRetriever()
+    # One search right away, so the first user does not pay the first-call cost
+    # (the first dense encode on the GPU took 894 ms, the next ones about 150 ms, Oct 20).
+    retriever.text_to_item_retrieval("warm up", 1)
     seconds = time.perf_counter() - start
     print("Retriever loaded in " + str(round(seconds, 1)) + " s.")
 
@@ -90,6 +108,15 @@ def playlist_act(state, db):
         value = json.dumps(track_info)
         annotations.append(SlotValueAnnotation("track", value))
     return DialogueAct(intent=_INTENT_PLAYLIST, annotations=annotations)
+
+
+def print_turn_time(intent_name, start):
+    """Print how long one turn took, in the backend terminal (T13 latency check).
+
+    intent_name="ADD", start 0.812 s ago -> prints "[ADD] 812 ms"
+    """
+    milliseconds = (time.perf_counter() - start) * 1000
+    print("[" + intent_name + "] " + str(round(milliseconds)) + " ms")
 
 
 class MusicCRS(Agent):
@@ -130,11 +157,15 @@ class MusicCRS(Agent):
 
         parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed.
         """
+        # Start the clock: the time printed at the end covers the whole turn.
+        start = time.perf_counter()
+
         # 1. Understand the message: slash commands by rules, other text by one LLM call.
         parsed = parse(utterance.text, self.state, self.services.llm)
 
         if parsed.name == "QUIT":
             self.goodbye()
+            print_turn_time(parsed.name, start)
             return
 
         # 2. Copy the playlist, to see afterwards whether the handler changed it.
@@ -162,6 +193,7 @@ class MusicCRS(Agent):
                 dialogue_acts=dialogue_acts,
             )
         )
+        print_turn_time(parsed.name, start)
 
 
 if __name__ == "__main__":

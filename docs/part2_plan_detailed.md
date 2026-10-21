@@ -235,6 +235,7 @@ class Services:                     # created once in main, shared by every agen
 | `/add [artist]: [track]` | add (artist optional: `/add [track]`) |
 | `/del [artist]: [track]` | remove by name |
 | `/remove <track_id>` | remove by ID (UI button) |
+| `/select <choice>` | choose from the pending options (the option buttons send `/select <n>`; added Oct 21) |
 | `/list` | show the playlist |
 | `/clear` | clear the playlist |
 | `/recommend` | R6 |
@@ -299,6 +300,7 @@ Each task: owner · files · interface · design notes · LLM calls · done when
 - Notes: render the **last** `PLAYLIST` act (the agent is the source of truth). A remove button per track sends `/remove <id>`, a clear button sends `/clear`, and an add box sends `add <text>` as a normal chat message (so R4 disambiguation still works). Hide `PLAYLIST` acts from the chat bubbles. Show the track count and total duration.
 - LLM calls: 0.
 - Done when: add, remove and clear from both the chat and the panel keep the two in sync. `npm test` still passes.
+- Result (Oct 21, Alejandro, PR #14): `frontend/src/components/Playlist/PlaylistPanel.tsx` + `.css`, mounted beside the chat in `ChatBox.tsx`; it reads the last `PLAYLIST` act of the raw messages, renders names as plain text, × sends `/remove <id>`, "Clear Playlist" sends `/clear`, the add box sends `add <text>`, and the header shows the count and total minutes. Adapted by JP (Oct 21): his `tsconfig.json` change was dropped (`moduleResolution: "bundler"` fails on TypeScript 4.9.5: TS6046); `npx tsc --noEmit` passes. The chat now also shows the `OPTIONS` act as buttons (DialogueKit sends no `attachments`, so the starter kit's buttons never appeared); a click sends `/select <n>`. `npm test` cannot run on this machine (a Babel version clash in `node_modules`, unrelated to our code).
 
 ### T6 — Track resolver · **Alejandro** · Fri Oct 16
 
@@ -316,6 +318,7 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - Also handle "X by Y" inside the track slot when the parser misses the artist.
 - LLM calls: 0.
 - Done when: a test list of ~15 loose references (case, punctuation, accents, "feat.", typos, artist only) resolves as expected.
+- Result (Oct 19, Alejandro; adapted Oct 21, JP): `difflib.SequenceMatcher` instead of rapidfuzz (no new dependency). Order: only an artist → `resolve_artist`; exact match of the whole name first (so "Stand By Me" is not split at "by"); then "song by artist" split; then fuzzy over 50 FTS5 candidates, title score ≥ 0.6, and **with an artist, the candidate's artist must score ≥ 0.8** (JP's fix: "Always" by Bon Jovi gave 45 songs by other artists, "Goodbye" by Chris Young gave Chris Brown). `artist_key` drops a leading "the" ("the eagles" → Eagles). 11 resolver cases in `check_handlers`.
 
 ### T7 — R2 handlers · **Alejandro** · Sat Oct 17
 
@@ -323,6 +326,7 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - Notes: 1 match → add/remove. Several → T8. 0 → "I couldn't find X in the database". A duplicate add → say so, don't add twice. REMOVE resolves against the **playlist first** ("remove the Queen song").
 - LLM calls: 0 beyond the parser.
 - Done when: all 4 actions work in natural language with 2+ phrasings each, and the panel updates.
+- Result (Oct 19–21, Alejandro; adapted Oct 21, JP): REMOVE rewritten. It crashed when there was no `track` slot (`parsed.raw_text` does not exist), so "remove the Queen song" (`{"artist": "queen"}`) and `/remove <unknown id>` broke the turn. Now it goes by ID, then by title (`normalize` / `base_name` equal, or part of the title) and/or artist (`artist_key`); 1 match → removed, several → listed, the user asked for the title. The handlers no longer add their own `PLAYLIST` act (the agent sends it once). "1 song" / "1 song removed".
 
 ### T8 — R4 disambiguation · **Alejandro** · Sun Oct 18
 
@@ -331,6 +335,7 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - The choice: a click (quick reply), or "the second one" / "the one by X" → SELECT, using T11's `select_indices` (shared, owned by JP).
 - LLM calls: 0 beyond the parser.
 - Done when: "add Love" shows 5 sensible options; with a rock playlist, rock versions rank higher.
+- Result (Oct 19, Alejandro; adapted Oct 21, JP): `rank_options` = popularity/93 + 1.5 × same artist + BPR cosine. The BPR part looked for `services.bpr_matrix`, which does not exist, so it was never used; it now reads the Part 1 `bpr_sim` scorer inside the retriever (`services.retriever.fusion.scorers["bpr_sim"]`, unit rows). Measured: with an R&B playlist (TLC, ...), "Love?" by Strapping Young Lad (metal) drops from 3rd to 5th. `options_act` moved from `recs.py` to `playlist.py` (shared by R4 and R6/R8; `recs.py` already imported `playlist.py`).
 
 ### T9 — R8 playlist from a description · **JP** · Mon Oct 19 – Tue Oct 20
 
@@ -353,6 +358,7 @@ def resolve(db: TrackDB, track: str | None, artist: str | None) -> list[Track]:
 - The answers come **from the DB with templates**. The LLM only fills the slots (in the T3 call), so it cannot invent facts. If the track is ambiguous, answer for the most popular match and say which one.
 - LLM calls: 0 beyond the parser.
 - Done when: all 8 types answer correctly, with 2 phrasings each.
+- Result (Oct 19, Alejandro; adapted Oct 21, JP): all 8 types from the DB, checked in `check_handlers` (e.g. It's My Life → 2000, Bad Medicine → 5:16, Bon Jovi → 32 tracks, Nirvana's top → Heart-Shaped Box). ASK_ARTIST now uses `resolve_artist` ("the eagles"), and the shortcuts were written out.
 
 ### T11 — R7 selection · **JP** · Mon Oct 19 – Tue Oct 20
 
@@ -382,16 +388,17 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 - Notes: a fixed, well-written text with one example per feature. If the parser fills a `topic` slot ("how do I remove?"), show only that part.
 - LLM calls: 0 beyond the parser.
 - Done when: "help", "what can you do?" and "how do I make a playlist?" all give a useful answer.
+- Result (Oct 19, Alejandro; Oct 21, JP): one explanation per `HELP_TOPICS` value; the full help lists all of them (JP added R8 and question examples). A GREETING handler (`handle_greeting` in `musiccrs.py`, T13) replies with the features too.
 
-### T13 — Simulator config + latency · **JP** · Wed Oct 21
+### T13 — Latency check (was: simulator config) · **JP** · Oct 20–21
 
-- File: `simulation/config.py` (only `COMMANDS`, `GROUP_ID`). The token and key are filled in locally and never committed.
-- Run `python simulation/simulator.py --no-upload`, read the dialogues, and fix what fails. Record ms per intent (§7).
-- Done when: a full `--no-upload` run completes with no crash. Final upload on Mon Oct 26.
+- Changed Oct 20: the course simulator is from the 2025 course (upstream commits Oct 30 – Nov 12, 2025), the 2026 Part 2 spec does not mention it, and it needs an upload token we did not get (it checks the token and calls the course server even with `--no-upload`). Its default `COMMANDS` already match ours; `simulation/config.py` is not changed.
+- Built: `handle_greeting` (GREETING had no handler: "Hello!" got "cannot do that yet"); `print_turn_time` (`[ADD] 812 ms` per turn in the backend terminal); a warm-up search in `create_services` (the first `text_to_item_retrieval` after startup took 894 ms, then 147 / 170 ms; after the warm-up the first real one takes 119 ms); `musiccrs/checks/check_latency.py`, a 25-turn scripted conversation with the simulator's hard catalog cases, checking the intent, the playlist length after each turn and ≤ 3 s per turn.
+- Result: §7.
 
-### T14 — Demo script + README · **Alejandro** · Thu Oct 22 – Fri Oct 23
+### T14 — Demo script + README · **JP** (was Alejandro) · Oct 21
 
-- Files: `docs/part2_demo.md` (one or two example lines per R1–R8, in demo order), plus a "Part 2" section in `README.md` (how to build the DB and run).
+- Files: `docs/part2_demo.md` (setup, start, a 30-line demo script for R1–R8, the checks, the acts, problems; it replaces `docs/how_to_run.md`) and "Part 2: how to run and demo" in `README.md`.
 - Done when: both people run the full script without a failure.
 
 ---
@@ -417,16 +424,23 @@ def select_indices(text: str, options: list[Track], llm) -> list[int] | None:
 
 ## 7. Latency and LLM budget per intent
 
-Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFICAR** (T13 measures them). Measured in T3 (Oct 19): one parser call takes 0.3–0.9 s (mean 0.45 s), so rule-based shortcuts are not needed.
+Limits: 3–5 s per turn (our aim: ≤ 3 s, ≤ 3 LLM calls). Measured by T13 with `check_latency`
+(Oct 20, run 2, after the warm-up, before the merge; JP's laptop, Gemma 4 31B), whole turn = parser + handler:
 
-| Intent | LLM calls | Other cost | Expected |
+| Intent | LLM calls | Other cost | Measured per turn (mean / max) |
 | --- | --- | --- | --- |
-| slash command | 0 | SQLite ms | < 0.1 s |
-| ADD / REMOVE / SHOW / CLEAR / HELP | 1 (parser) | SQLite + fuzzy | ≈ 1 LLM call |
-| ASK_TRACK / ASK_ARTIST | 1 | SQLite | ≈ 1 LLM call |
-| RECOMMEND | 1 | `FinalRetriever`, measured in T4: 10 ms per call (empty message, so no dense encode) | ≈ 1 LLM call |
-| CREATE_PLAYLIST | 2 (parser + plan), 3 with a retry | measured in T9: 0.8 s mean per handler call (plan call + retrieval with a live dense encode); 1.5–3.4 s per turn | ≈ 2 calls + 0.3 s |
-| SELECT | 1 (rules) or 2 (LLM fallback) | measured in T11: 0.4–1.1 s per turn; LLM fallback 344 ms mean | ≈ 1–2 calls |
+| slash command | 0 | SQLite | 0–4 ms |
+| GREETING / HELP | 1 (parser) | none | 625 ms (GREETING) |
+| ADD | 1 | SQLite + fuzzy | 651 / 749 ms (7 turns) |
+| REMOVE / SHOW / CLEAR | 1 | SQLite | 480 / 311 / 306 ms |
+| ASK_TRACK / ASK_ARTIST | 1 | SQLite | 564 / 647 ms |
+| RECOMMEND | 1 | `FinalRetriever` 7–10 ms (empty message, no dense encode) | 465 ms |
+| SELECT | 1 (rules, or a button: 0) or 2 (LLM fallback) | — | 481 ms |
+| CREATE_PLAYLIST | 2 (parser + plan) | retrieval with a live dense encode (~120–170 ms after the warm-up) | 1218 ms (was 3094 before the warm-up) |
+| QUIT | 1 | — | 311 ms |
+
+- Every turn under 3 s. Run-to-run noise from the LLM is large (SHOW 828 ms in run 1, 311 ms in run 2, same code), so one run is only a rough guide.
+- Run 3 (Oct 21, after the merge, 25 turns with HELP, ASK_*, R4 options and `/select`): **OK**, every turn under 3 s. Mean ms: GREETING 700, HELP 316, ADD 576 (max 649, 10 turns), SELECT 493 (4), REMOVE 442 (2), SHOW 309, ASK_TRACK 564, ASK_ARTIST 647, RECOMMEND 344, CREATE_PLAYLIST **1676** (the slowest), CLEAR 311, QUIT 412. Same day: `check_nlu` 37/37 (mean 515 ms, max 925), `check_select` 16/16 rules + 6/6 LLM (mean 690 ms, max 1244).
 
 - Startup: catalog + BM25 index + embeddings + the Qwen3 model take **45–51 s** (measured in T4 on JP's GPU laptop), **once**. This is fine. Part of it is the catalog loaded twice (`BM25PlusRetriever` and `DenseScorer` each create a `MusicCatalogLoader`).
 - If one Gemma 4 31B call already takes > 2 s, add rule-based shortcuts for the common phrasings ("show my playlist", "clear it") before the LLM.
@@ -475,6 +489,6 @@ Limits: 5–10 LLM calls and 3–5 s per turn. The numbers below are **A VERIFIC
 3. ~~The unit of `duration` and its mean~~ — resolved Oct 15: milliseconds, mean 239.7 s (§2).
 4. Open WebUI key works; the latency of one Gemma 4 31B call from our network.
 5. Whether `rapidfuzz` is worth a new dependency, or FTS5 + `difflib` is enough.
-6. Which phrasings the simulator's persona dialogues actually use (read the first `--no-upload` run).
+6. ~~Which phrasings the simulator's persona dialogues actually use~~ — resolved Oct 20: the simulator is not used (2025 tool, no upload token); its scripted hard cases are in `check_latency`.
 7. ~~R8: replace the current playlist, or propose and ask?~~ — resolved Oct 20 (T9): replace, and say so in the reply.
 8. Memory and startup time of `FinalRetriever` on the laptop used for the demo (JP's GPU laptop: 45–51 s startup, 10 ms per R6 call; not yet measured on a CPU-only laptop).
