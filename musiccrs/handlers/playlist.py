@@ -141,45 +141,37 @@ def handle_show(parsed, state, services):
 
 
 def handle_remove(parsed, state, services):
-    """REMOVE: take a track out of the playlist by ID (/remove) or loose reference (R2)."""
-    if "track_id" in parsed.slots:
-        track_id = parsed.slots["track_id"]
-        if track_id not in state.playlist:
-            return Reply("That song is not in your playlist.")
-        state.playlist.remove(track_id)
+    """Handles removing a track from the playlist by track ID or fuzzy title search."""
+    slots = parsed.slots or {}
+    track_id = slots.get("track_id") or slots.get("id")
+    track_query = slots.get("track") or slots.get("query") or parsed.raw_text
+
+    # 1. Direct match by track_id (e.g., triggered by clicking 'X' in the React frontend panel)
+    if track_id and track_id in state.playlist:
         track = services.db.get(track_id)
-        t_name = describe_track(track) if track else "Track"
-        return Reply("Removed " + t_name + " from your playlist.")
+        t_name = track.name if track else track_id
+        state.playlist.remove(track_id)
+        return Reply(
+            text=f"Removed {t_name} from your playlist.",
+            dialogue_acts=[_playlist_act(state.playlist, services.db)]
+        )
 
-    raw_track = parsed.slots.get("track")
-    raw_artist = parsed.slots.get("artist")
-
-    if not raw_track and not raw_artist:
-        return Reply("Which song should I remove? For example: remove Smells Like Teen Spirit")
-
-    current_tracks = [services.db.get(tid) for tid in state.playlist if services.db.get(tid)]
-    norm_track = (raw_track or "").lower()
-    norm_artist = (raw_artist or "").lower()
-
-    for t in current_tracks:
-        if t:
-            name_match = norm_track in t.name.lower() if norm_track else True
-            artist_match = any(norm_artist in a.lower() for a in t.artists) if norm_artist else True
-            if name_match and artist_match and (norm_track or norm_artist):
-                state.playlist.remove(track_id)
+    # 2. Search for matching track title inside the active playlist
+    if track_query:
+        for tid in list(state.playlist):
+            track = services.db.get(tid)
+            if track and (track_query.lower() in track.name.lower() or track_query.strip() == tid):
+                state.playlist.remove(tid)
                 return Reply(
-                    text="Removed " + t_name + " from your playlist.",
+                    text=f"Removed {track.name} from your playlist.",
                     dialogue_acts=[_playlist_act(state.playlist, services.db)]
                 )
 
-    candidates = resolve(services.db, raw_track, raw_artist)
-    for c in candidates:
-        if c.track_id in state.playlist:
-            state.playlist.remove(c.track_id)
-            return Reply("Removed " + describe_track(c) + " from your playlist.")
-
-    safe_track = html.escape(raw_track or "", quote=False)
-    return Reply("'" + safe_track + "' is not in your playlist.")
+    # 3. Track not found in playlist
+    return Reply(
+        text="That track is not in your playlist.",
+        dialogue_acts=[_playlist_act(state.playlist, services.db)]
+    )
 
 
 def handle_clear(parsed, state, services):
