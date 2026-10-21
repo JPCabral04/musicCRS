@@ -19,7 +19,7 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
-from .handlers.playlist import handle_add, handle_clear, handle_remove, handle_show
+from .handlers.playlist import handle_add, handle_clear, handle_remove, handle_show, handle_help
 from .handlers.recs import handle_recommend
 from .handlers.selection import handle_select
 from .handlers.qa import handle_ask_track, handle_ask_artist
@@ -37,6 +37,7 @@ HANDLERS = {
     "REMOVE": handle_remove,
     "SHOW": handle_show,
     "CLEAR": handle_clear,
+    "HELP": handle_help,
     "RECOMMEND": handle_recommend,
     "SELECT": handle_select,
     "ASK_TRACK": handle_ask_track,

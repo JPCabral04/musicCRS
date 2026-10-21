@@ -4,6 +4,7 @@ T7, T8 & T12 implementation. Replaces the T2 skeleton.
 """
 import html
 import numpy as np
+import json
 from dialoguekit.core.dialogue_act import DialogueAct
 from dialoguekit.core.intent import Intent
 from dialoguekit.core.annotation import Annotation
@@ -28,7 +29,9 @@ def _options_act(options):
     for idx, t in enumerate(options, 1):
         artist = t.artists[0] if t.artists else "Unknown"
         label = f"{idx}. {t.name} — {artist}"
-        annotations.append(Annotation("option", label))
+        anno = Annotation("option", label)
+        anno.slot = "option"
+        annotations.append(anno)
     return DialogueAct(intent=Intent("OPTIONS"), annotations=annotations)
 
 
@@ -100,7 +103,10 @@ def handle_add(parsed, state, services):
             return Reply(describe_track(track) + " is already in your playlist.")
         
         state.playlist.append(track.track_id)
-        return Reply("Added " + describe_track(track) + " to your playlist.")
+        return Reply(
+            text="Added " + describe_track(track) + " to your playlist.",
+            dialogue_acts=[_playlist_act(state.playlist, services.db)]
+        )
 
     # Multiple candidates -> Disambiguation (R4)
     top_candidates = _rank_disambiguation_candidates(candidates, state.playlist, services)
@@ -128,7 +134,10 @@ def handle_show(parsed, state, services):
         if track:
             text = text + "<li>" + describe_track(track) + "</li>\n"
     text = text + "</ol>"
-    return Reply(text)
+    return Reply(
+        text=text,
+        dialogue_acts=[_playlist_act(state.playlist, services.db)]
+    )
 
 
 def handle_remove(parsed, state, services):
@@ -157,8 +166,11 @@ def handle_remove(parsed, state, services):
             name_match = norm_track in t.name.lower() if norm_track else True
             artist_match = any(norm_artist in a.lower() for a in t.artists) if norm_artist else True
             if name_match and artist_match and (norm_track or norm_artist):
-                state.playlist.remove(t.track_id)
-                return Reply("Removed " + describe_track(t) + " from your playlist.")
+                state.playlist.remove(track_id)
+                return Reply(
+                    text="Removed " + t_name + " from your playlist.",
+                    dialogue_acts=[_playlist_act(state.playlist, services.db)]
+                )
 
     candidates = resolve(services.db, raw_track, raw_artist)
     for c in candidates:
@@ -179,7 +191,10 @@ def handle_clear(parsed, state, services):
     state.playlist.clear()
     state.pending_options.clear()
     state.pending_kind = None
-    return Reply("Cleared your playlist (" + str(count) + " songs removed).")
+    return Reply(
+        text="Cleared your playlist (" + str(count) + " songs removed).",
+        dialogue_acts=[_playlist_act([], services.db)]
+    )
 
 def handle_help(parsed, state, services):
     """HELP: explain system capabilities or topic-specific features (R3 - T12)."""
@@ -207,3 +222,20 @@ def handle_help(parsed, state, services):
         "• <b>Smart Selection:</b> Choose options by saying 'the first two', 'all', or 'all except X'."
     )
     return Reply(text=full_help)
+
+def _playlist_act(playlist_ids, db):
+    annotations = []
+    for tid in playlist_ids:
+        track = db.get(tid)
+        if track:
+            track_data = {
+                "id": track.track_id,
+                "name": track.name,
+                "artist": track.artists[0] if track.artists else "Unknown",
+                "duration_ms": getattr(track, "duration_ms", 0) or 0
+            }
+            anno = Annotation("track", json.dumps(track_data))
+            anno.slot = "track"
+            anno.slot_address = "track"
+            annotations.append(anno)
+    return DialogueAct(intent=Intent("PLAYLIST"), annotations=annotations)

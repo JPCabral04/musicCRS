@@ -32,12 +32,11 @@ from ..methods.bm25 import BM25Retriever
 from ..methods.bm25_plus import BM25PlusRetriever
 from ..context import (Scorer, SessionPolicy, TurnContext, finalize_top_k,
                       iter_turn_contexts, load_sessions)
-from .data_loader import MusicCatalogLoader
-from .evaluation.evaluate import evaluate
-from .evaluation.make_ground_truth import make_ground_truth
-from .session_cf import SameArtistScorer, BPRSimilarityScorer
-from .dense import DenseScorer
-from .session_cf import SameArtistScorer, BPRSimilarityScorer
+from ..data_loader import MusicCatalogLoader
+from ..evaluation.evaluate import evaluate
+from ..evaluation.make_ground_truth import make_ground_truth
+from ..methods.session_cf import SameArtistScorer, BPRSimilarityScorer
+from ..methods.dense import DenseScorer
 
 DATASET = "talkpl-ai/TalkPlayData-Challenge-Dataset"
 VAL_FOLDS_PATH = "data/val_folds.json"

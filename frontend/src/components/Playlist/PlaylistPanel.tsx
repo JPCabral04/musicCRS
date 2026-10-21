@@ -21,24 +21,40 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
   useEffect(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      if (msg.sender === 'MusicCRS' && msg.message?.dialogue_acts) {
-        const playlistAct = msg.message.dialogue_acts.find(
-          (act: any) => act.intent === 'PLAYLIST' || act.intent?.name === 'PLAYLIST'
+      
+      // Extraemos los dialogue_acts de cualquier nivel donde DialogueKit los sitúe
+      const acts = msg.dialogue_acts || msg.message?.dialogue_acts || msg.dialogue_act;
+
+      if (acts && Array.isArray(acts)) {
+        const playlistAct = acts.find(
+          (act: any) =>
+            act.intent === 'PLAYLIST' ||
+            act.intent?.name === 'PLAYLIST' ||
+            act.intent?.intent_type === 'PLAYLIST'
         );
 
         if (playlistAct) {
           const tracks: PlaylistTrack[] = [];
-          if (playlistAct.annotations) {
-            playlistAct.annotations.forEach((anno: any) => {
-              if (anno.slot === 'track' || anno.slot_type === 'track') {
+          const annotations = playlistAct.annotations || playlistAct.annotation;
+
+          if (annotations && Array.isArray(annotations)) {
+            annotations.forEach((anno: any) => {
+              const slot = anno.slot || anno.slot_type || anno.slot_address;
+              if (slot === 'track' || slot === 'TRACK') {
                 try {
-                  const trackData = typeof anno.value === 'string' ? JSON.parse(anno.value) : anno.value;
-                  tracks.push({
-                    id: trackData.id,
-                    name: trackData.name,
-                    artist: trackData.artist || 'Unknown',
-                    duration_ms: trackData.duration_ms || 0,
-                  });
+                  const trackData =
+                    typeof anno.value === 'string'
+                      ? JSON.parse(anno.value)
+                      : anno.value;
+
+                  if (trackData && trackData.id) {
+                    tracks.push({
+                      id: trackData.id,
+                      name: trackData.name,
+                      artist: trackData.artist || 'Unknown',
+                      duration_ms: trackData.duration_ms || 0,
+                    });
+                  }
                 } catch (e) {
                   console.error('Failed to parse playlist track JSON', e);
                 }
@@ -46,7 +62,7 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
             });
           }
           setPlaylist(tracks);
-          break;
+          break; // Detenerse al encontrar la lista más reciente
         }
       }
     }

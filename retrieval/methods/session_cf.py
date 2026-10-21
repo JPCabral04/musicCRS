@@ -13,9 +13,8 @@ Usage:
 import numpy as np
 
 from .bm25 import BM25Retriever
-from .context import TurnContext
-from .data_loader import MusicCatalogLoader
-from .dense import load_track_matrix
+from ..context import TurnContext
+from ..data_loader import MusicCatalogLoader
 from .dense import load_track_matrix
 
 
