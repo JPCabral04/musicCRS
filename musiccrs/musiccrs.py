@@ -19,7 +19,8 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
-from .handlers.playlist import handle_add, handle_clear, handle_remove, handle_show
+from .handlers.playlist import handle_add, handle_clear, handle_help, handle_remove, handle_show
+from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
 from .llm import create_client
@@ -49,9 +50,12 @@ HANDLERS = {
     "REMOVE": handle_remove,
     "SHOW": handle_show,
     "CLEAR": handle_clear,
+    "HELP": handle_help,
     "RECOMMEND": handle_recommend,
     "CREATE_PLAYLIST": handle_create_playlist,
     "SELECT": handle_select,
+    "ASK_TRACK": handle_ask_track,
+    "ASK_ARTIST": handle_ask_artist,
 }
 
 # Shown when the agent cannot handle a message (until the HELP handler of T12 exists).
