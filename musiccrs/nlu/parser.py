@@ -108,6 +108,14 @@ def parse_command(text):
             slots["track_id"] = rest
         return ParsedIntent("REMOVE", slots)
 
+    # /select <choice>: sent by the option buttons of the chat (R4, R6, R8 lists).
+    # "/select 2" -> ParsedIntent("SELECT", {"selection": "2"}), read by the T11 rules.
+    if command == "/select":
+        slots = {}
+        if rest != "":
+            slots["selection"] = rest
+        return ParsedIntent("SELECT", slots)
+
     # Commands without an argument: /list, /clear, /recommend, /help, /quit
     if command in SIMPLE_COMMANDS:
         intent_name = SIMPLE_COMMANDS[command]

@@ -1,3 +1,5 @@
+/* The chat grows with the window, between 420 px and 70% of the viewport height. */
 .chat-widget-content .card-body{
-    max-height: 500px;
+    min-height: 420px;
+    max-height: 70vh;
    }

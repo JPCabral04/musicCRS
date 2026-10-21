@@ -27,7 +27,6 @@ from .llm import create_client
 from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
 
-_INTENT_OPTIONS = Intent("OPTIONS")
 _INTENT_PLAYLIST = Intent("PLAYLIST")
 
 
@@ -43,7 +42,7 @@ def handle_greeting(parsed, state, services):
 
 
 # Intent name -> handler function. Every handler is handler(parsed, state, services) -> Reply.
-# Each new task adds its own lines (RECOMMEND in T4, HELP in T12, ...).
+# QUIT has no handler: receive_utterance ends the conversation itself.
 HANDLERS = {
     "GREETING": handle_greeting,
     "ADD": handle_add,
@@ -58,9 +57,8 @@ HANDLERS = {
     "ASK_ARTIST": handle_ask_artist,
 }
 
-# Shown when the agent cannot handle a message (until the HELP handler of T12 exists).
-COMMANDS_TEXT = ("You can use: /add artist: track, /del artist: track, "
-                 "/list, /clear, /recommend, /quit.")
+# Shown when the agent cannot handle a message.
+COMMANDS_TEXT = ("Ask me 'what can you do?' or type /help to see what I can do.")
 
 # The heavy objects (DB, retriever, LLM client), shared by every agent.
 # Set once in __main__ below, before the server accepts any connection.

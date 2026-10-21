@@ -109,8 +109,41 @@ export default function ChatBox() {
     [giveFeedback, chatMessagesRef, config]
   );
 
+  // A click on an option button: show the option in the chat, send "/select <n>" to the agent.
+  const handleOptionClick = useCallback(
+    (label: string, command: string) => {
+      updateMessages(
+        <UserChatMessage key={chatMessagesRef.current.length} message={label} />
+      );
+      quickReply({ message: command });
+    },
+    [chatMessagesRef, quickReply]
+  );
+
   const handleButtons = useCallback(
     (message: ChatMessage) => {
+      // R4 / R6 / R8 choices: one button per annotation of the OPTIONS act,
+      // e.g. "2. Love — Musiq Soulchild" sends "/select 2" (handled without the LLM).
+      const optionsAct = message.dialogue_acts?.find(
+        (act) => act.intent === "OPTIONS"
+      );
+      if (optionsAct && optionsAct.annotations && optionsAct.annotations.length > 0) {
+        setChatButtons(
+          optionsAct.annotations.map((annotation, index) => {
+            const command = "/select " + (index + 1);
+            return (
+              <QuickReplyButton
+                key={index}
+                text={annotation.value}
+                message={command}
+                click={(selected: string) => handleOptionClick(annotation.value, selected)}
+              />
+            );
+          })
+        );
+        return;
+      }
+
       const buttons = message.attachments?.find(
         (attachment) => attachment.type === "buttons"
       )?.payload.buttons;
@@ -131,7 +164,7 @@ export default function ChatBox() {
         setChatButtons([]);
       }
     },
-    [handleQuickReply]
+    [handleQuickReply, handleOptionClick]
   );
 
   useEffect(() => {
@@ -151,8 +184,8 @@ export default function ChatBox() {
   }, [onRestart]);
 
   return (
-    <div style={{ display: "flex", gap: "16px", width: "100%", height: "100%" }}>
-      <div className="chat-widget-content" style={{ flex: 1 }}>
+    <div className="chat-layout">
+      <div className="chat-widget-content chat-main">
         <MDBCard
           id="chatBox"
           className="chat-widget-card"

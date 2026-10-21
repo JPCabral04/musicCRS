@@ -1,16 +1,63 @@
 """Playlist handlers: ADD, REMOVE, SHOW, CLEAR (R2), R4 disambiguation, and HELP (R3).
 
-T7, T8 & T12 implementation. Replaces the T2 skeleton.
+T7, T8 and T12 by Alejandro (Oct 19-21). Adapted by JP (Oct 21): REMOVE by title and/or
+artist with normalize (it crashed without a track slot), the BPR signal of the R4 ranking
+read from the Part 1 retriever, and the PLAYLIST act left to the agent (musiccrs.py), which
+sends it once whenever the playlist changed.
+
+Text replies are HTML (the chat renders them), so names go through html.escape.
 """
 import html
+
 import numpy as np
-import json
 from dialoguekit.core.dialogue_act import DialogueAct
 from dialoguekit.core.intent import Intent
-from dialoguekit.core.annotation import Annotation
+from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
 
+from ..data.db import base_name, normalize
+from ..data.resolver import artist_key, resolve
 from ..state import Reply
-from ..data.resolver import resolve
+
+_INTENT_OPTIONS = Intent("OPTIONS")
+
+# R4: how many same-name choices are shown.
+NUM_OPTIONS = 5
+
+# R4 ranking: score = popularity / MAX_POPULARITY
+#                   + SAME_ARTIST_WEIGHT * (shares an artist with the playlist)
+#                   + BPR_WEIGHT * (BPR cosine with the playlist centroid)
+MAX_POPULARITY = 93.0      # the highest popularity in the catalog
+SAME_ARTIST_WEIGHT = 1.5
+BPR_WEIGHT = 1.0
+
+# R3: one explanation per HELP topic (the topics the parser may give, see HELP_TOPICS).
+TOPIC_EXPLANATIONS = {
+    "add": "<b>Add songs:</b> type <i>'add Smells Like Teen Spirit'</i> or "
+           "<i>'add It's My Life by Bon Jovi'</i>, or use the box above the playlist. "
+           "If several songs have that name, I show them and you pick one.",
+    "remove": "<b>Remove songs:</b> type <i>'remove Smells Like Teen Spirit'</i> or "
+              "<i>'remove the Bon Jovi song'</i>, or click the × next to the song in the playlist.",
+    "show": "<b>Show playlist:</b> type <i>'show my playlist'</i> or <i>'/list'</i>. "
+            "The playlist is also always shown next to the chat.",
+    "clear": "<b>Clear playlist:</b> type <i>'clear my playlist'</i> or <i>'/clear'</i>, "
+             "or click 'Clear Playlist'.",
+    "questions": "<b>Ask questions:</b> about a song (<i>'who sings Hotel California?'</i>, "
+                 "<i>'what album is Toxic on?'</i>, <i>'when was It's My Life released?'</i>, "
+                 "<i>'how long is Bad Medicine?'</i>) or an artist (<i>'how many songs does "
+                 "Queen have?'</i>, <i>'what is Nirvana's most popular song?'</i>, "
+                 "<i>'which albums does Adele have?'</i>, <i>'what genre is Metallica?'</i>).",
+    "recommend": "<b>Get recommendations:</b> type <i>'recommend something'</i> to get 5 songs "
+                 "like the ones in your playlist, or <i>'something different'</i> for other artists.",
+    "create_playlist": "<b>Create a playlist:</b> describe it, for example "
+                       "<i>'make me a playlist of sad love songs'</i> or <i>'music for the gym'</i>. "
+                       "I choose the length from the description.",
+    "select": "<b>Choose from a list:</b> click a button, or type <i>'the first two'</i>, "
+              "<i>'all of them'</i>, <i>'none'</i> or <i>'all except the Bon Jovi one'</i>.",
+}
+
+# R3: the order of the topics in the full help.
+HELP_ORDER = ("add", "remove", "show", "clear", "questions", "recommend",
+              "create_playlist", "select")
 
 
 def describe_track(track):
@@ -20,158 +67,265 @@ def describe_track(track):
     quotes intact (quote=False).
     """
     name = html.escape(track.name, quote=False)
-    main_artist = html.escape(track.artists[0] if track.artists else "Unknown", quote=False)
+    main_artist = html.escape(track.artists[0], quote=False)
     return name + " by " + main_artist
 
-def _options_act(options):
-    """Creates a DialogueAct with OPTIONS annotations for UI quick-reply buttons."""
+
+def options_act(tracks):
+    """The shown songs as one OPTIONS dialogue act (for the UI buttons and the simulator).
+
+    Used by R4 here and by R6/R8 in recs.py. One annotation per song, numbered from 1:
+    SlotValueAnnotation("option", "1. Come As You Are — Nirvana")
+    """
     annotations = []
-    for idx, t in enumerate(options, 1):
-        artist = t.artists[0] if t.artists else "Unknown"
-        label = f"{idx}. {t.name} — {artist}"
-        anno = Annotation("option", label)
-        anno.slot = "option"
-        annotations.append(anno)
-    return DialogueAct(intent=Intent("OPTIONS"), annotations=annotations)
+    number = 1
+    for track in tracks:
+        value = str(number) + ". " + track.name + " — " + track.artists[0]
+        annotations.append(SlotValueAnnotation("option", value))
+        number = number + 1
+    return DialogueAct(intent=_INTENT_OPTIONS, annotations=annotations)
 
 
-def _rank_disambiguation_candidates(candidates, playlist_ids, services):
-    """Ranks R4 candidates using popularity and BPR vector / same-artist signals."""
-    if not candidates:
-        return []
+def track_list_html(tracks):
+    """Songs as a numbered HTML list, for replies that show options."""
+    text = "<ol>\n"
+    for track in tracks:
+        text = text + "<li>" + describe_track(track) + "</li>\n"
+    return text + "</ol>"
 
-    # Popularity normalized to [0, 1]
-    pop_scores = [c.popularity / 93.0 for c in candidates]
 
-    # Check same-artist overlap with the current playlist
-    playlist_tracks = [services.db.get(tid) for tid in playlist_ids if services.db.get(tid)]
-    playlist_artists = {a for t in playlist_tracks if t for a in t.artists}
+def bpr_scorer(services):
+    """The Part 1 BPR scorer inside the retriever, or None (the checks run without a retriever)."""
+    if services.retriever is None:
+        return None
+    scorers = services.retriever.fusion.scorers
+    if "bpr_sim" not in scorers:
+        return None
+    return scorers["bpr_sim"]
 
-    artist_scores = [
-        1.0 if any(a in playlist_artists for a in c.artists) else 0.0
-        for c in candidates
-    ]
 
-    # Calculate BPR vector similarity if tracks and playlist have BPR embeddings
-    bpr_scores = [0.0] * len(candidates)
-    if playlist_ids and hasattr(services, "bpr_matrix") and services.bpr_matrix is not None:
-        try:
-            p_indices = [services.track_id_to_idx[tid] for tid in playlist_ids if tid in services.track_id_to_idx]
-            if p_indices:
-                centroid = np.mean(services.bpr_matrix[p_indices], axis=0)
-                for i, c in enumerate(candidates):
-                    if c.track_id in services.track_id_to_idx:
-                        c_idx = services.track_id_to_idx[c.track_id]
-                        vec = services.bpr_matrix[c_idx]
-                        norm = np.linalg.norm(centroid) * np.linalg.norm(vec)
-                        if norm > 0:
-                            bpr_scores[i] = float(np.dot(centroid, vec) / norm)
-        except Exception:
-            pass
+def playlist_centroid(playlist_ids, scorer):
+    """The mean BPR vector of the playlist songs that have one, at unit length; None if none."""
+    vectors = []
+    for track_id in playlist_ids:
+        if track_id in scorer.tid_to_idx:
+            row = scorer.tid_to_idx[track_id]
+            if scorer.has_vector[row]:
+                vectors.append(scorer.matrix[row])
+    if len(vectors) == 0:
+        return None
 
-    # Final combined scoring
+    centroid = np.mean(vectors, axis=0)
+    length = np.linalg.norm(centroid)
+    if length == 0:
+        return None
+    return centroid / length
+
+
+def bpr_similarity(track_id, centroid, scorer):
+    """Cosine between a track's BPR vector and the playlist centroid (0.0 when unknown).
+
+    The rows of scorer.matrix already have length 1, so the dot product is the cosine.
+    """
+    if centroid is None:
+        return 0.0
+    if track_id not in scorer.tid_to_idx:
+        return 0.0
+    row = scorer.tid_to_idx[track_id]
+    if not scorer.has_vector[row]:
+        return 0.0
+    return float(np.dot(scorer.matrix[row], centroid))
+
+
+def rank_options(candidates, playlist_ids, services):
+    """R4: the NUM_OPTIONS best candidates, by popularity and similarity to the playlist.
+
+    Empty playlist -> popularity only ("add Love": the most popular "Love" songs first).
+    Playlist with Nirvana -> a Nirvana candidate gets +1.5 and comes first.
+    """
+    playlist_artist_keys = []
+    for track_id in playlist_ids:
+        track = services.db.get(track_id)
+        for name in track.artists:
+            playlist_artist_keys.append(artist_key(name))
+
+    scorer = bpr_scorer(services)
+    centroid = None
+    if scorer is not None:
+        centroid = playlist_centroid(playlist_ids, scorer)
+
+    # (score, position) pairs: sorting them never compares two Track objects.
     scored = []
-    for idx, c in enumerate(candidates):
-        score = pop_scores[idx] + (1.5 * artist_scores[idx]) + (1.0 * bpr_scores[idx])
-        scored.append((score, c))
+    position = 0
+    for candidate in candidates:
+        score = candidate.popularity / MAX_POPULARITY
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [track for _, track in scored[:5]]
+        same_artist = False
+        for name in candidate.artists:
+            if artist_key(name) in playlist_artist_keys:
+                same_artist = True
+        if same_artist:
+            score = score + SAME_ARTIST_WEIGHT
+
+        if scorer is not None:
+            score = score + BPR_WEIGHT * bpr_similarity(candidate.track_id, centroid, scorer)
+
+        scored.append((score, position))
+        position = position + 1
+
+    scored.sort(reverse=True)
+
+    best = []
+    for score, position in scored[:NUM_OPTIONS]:
+        best.append(candidates[position])
+    return best
+
 
 def handle_add(parsed, state, services):
-    """ADD: add a track to the playlist (R2), or ask for disambiguation (R4)."""
-    raw_track = parsed.slots.get("track")
-    raw_artist = parsed.slots.get("artist")
+    """ADD: add a track to the playlist (R2), or ask which one when several match (R4)."""
+    track_name = parsed.slots.get("track")
+    artist = parsed.slots.get("artist")
 
-    if not raw_track and not raw_artist:
+    if track_name is None and artist is None:
         return Reply("Which song should I add? For example: add Smells Like Teen Spirit")
 
-    # Resolve loose references using T6 resolver
-    candidates = resolve(services.db, raw_track, raw_artist)
+    # T6 resolver: exact normalized match first, then typos; keeps the artist if given.
+    candidates = resolve(services.db, track_name, artist)
 
-    if not candidates:
-        safe_track = html.escape(raw_track or "", quote=False)
-        if raw_artist:
-            safe_artist = html.escape(raw_artist, quote=False)
-            return Reply("Sorry, I could not find '" + safe_track + "' by '" + safe_artist + "' in the catalog.")
+    if len(candidates) == 0:
+        if track_name is None:
+            safe_artist = html.escape(artist, quote=False)
+            return Reply("Sorry, I could not find any songs by '" + safe_artist + "' in the catalog.")
+        safe_track = html.escape(track_name, quote=False)
+        if artist is not None:
+            safe_artist = html.escape(artist, quote=False)
+            return Reply("Sorry, I could not find '" + safe_track + "' by '" + safe_artist
+                         + "' in the catalog.")
         return Reply("Sorry, I could not find '" + safe_track + "' in the catalog.")
 
-    # Exactly one match -> Add directly
+    # Exactly one match: add it directly.
     if len(candidates) == 1:
         track = candidates[0]
         if track.track_id in state.playlist:
             return Reply(describe_track(track) + " is already in your playlist.")
-        
         state.playlist.append(track.track_id)
-        return Reply(
-            text="Added " + describe_track(track) + " to your playlist.",
-            dialogue_acts=[_playlist_act(state.playlist, services.db)]
-        )
+        return Reply("Added " + describe_track(track) + " to your playlist.")
 
-    # Multiple candidates -> Disambiguation (R4)
-    top_candidates = _rank_disambiguation_candidates(candidates, state.playlist, services)
-    state.pending_options = [c.track_id for c in top_candidates]
+    # Several matches: show the best ones and let the user pick (R4, chosen with SELECT in T11).
+    options = rank_options(candidates, state.playlist, services)
+    state.pending_options = []
+    for track in options:
+        state.pending_options.append(track.track_id)
     state.pending_kind = "disambiguation"
 
-    opt_lines = []
-    for idx, c in enumerate(top_candidates, 1):
-        a_str = html.escape(c.artists[0] if c.artists else "Unknown", quote=False)
-        t_str = html.escape(c.name, quote=False)
-        opt_lines.append(f"{idx}. <b>{t_str}</b> — {a_str}")
+    if track_name is not None:
+        intro = "I found several songs called '" + html.escape(track_name, quote=False) + "'."
+    else:
+        intro = "Here are some songs by '" + html.escape(artist, quote=False) + "'."
+    text = (intro + " Which one do you mean? Click it, or say for example 'the second one'.\n"
+            + track_list_html(options))
+    return Reply(text, [options_act(options)])
 
-    text = "I found multiple matches. Which one did you mean?<br>" + "<br>".join(opt_lines)
-    return Reply(text=text, dialogue_acts=[_options_act(top_candidates)])
+
+def name_matches(name, track):
+    """True if `name` refers to this playlist track: same normalized or base name, or part of it.
+
+    ("bad medicine", Bad Medicine)                   -> True
+    ("hotel california", "Hotel California - 2013 Remaster") -> True
+    ("teen spirit", Smells Like Teen Spirit)         -> True (part of the title)
+    """
+    wanted = normalize(name)
+    if wanted == "":
+        return False
+    full = normalize(track.name)
+    if wanted == full:
+        return True
+    if wanted == base_name(track.name):
+        return True
+    if wanted in full:
+        return True
+    return False
+
+
+def artist_matches(artist, track):
+    """True if one of the track's artists is `artist` ("the eagles" matches "Eagles")."""
+    wanted = artist_key(artist)
+    for name in track.artists:
+        if artist_key(name) == wanted:
+            return True
+    return False
+
+
+def handle_remove(parsed, state, services):
+    """REMOVE: remove a track by its ID (the × button), by title, by artist, or by both (R2).
+
+    "/remove <id>"              -> that track
+    "remove bad medicine"       -> the playlist track with that title
+    "remove the Queen song"     -> the only Queen track in the playlist
+    two Queen tracks            -> asks which one
+    """
+    # 1. By ID, sent by the remove button of the playlist panel.
+    if "track_id" in parsed.slots:
+        track_id = parsed.slots["track_id"]
+        if track_id not in state.playlist:
+            return Reply("That song is not in your playlist.")
+        track = services.db.get(track_id)
+        state.playlist.remove(track_id)
+        return Reply("Removed " + describe_track(track) + " from your playlist.")
+
+    track_name = parsed.slots.get("track")
+    artist = parsed.slots.get("artist")
+    if track_name is None and artist is None:
+        return Reply("Which song should I remove? For example: remove Bad Medicine")
+
+    if len(state.playlist) == 0:
+        return Reply("Your playlist is empty.")
+
+    # 2. The playlist tracks that match the title and/or the artist.
+    matches = []
+    for track_id in state.playlist:
+        track = services.db.get(track_id)
+        if track_name is not None and not name_matches(track_name, track):
+            continue
+        if artist is not None and not artist_matches(artist, track):
+            continue
+        matches.append(track)
+
+    if len(matches) == 0:
+        what = ""
+        if track_name is not None:
+            what = "'" + html.escape(track_name, quote=False) + "'"
+        if artist is not None:
+            if what != "":
+                what = what + " by "
+            what = what + "'" + html.escape(artist, quote=False) + "'"
+        return Reply(what + " is not in your playlist.")
+
+    if len(matches) > 1:
+        return Reply("Several songs in your playlist match:\n" + track_list_html(matches)
+                     + "\nWhich one should I remove? Say its title, for example 'remove "
+                     + html.escape(matches[0].name, quote=False) + "'.")
+
+    track = matches[0]
+    state.playlist.remove(track.track_id)
+    return Reply("Removed " + describe_track(track) + " from your playlist.")
 
 
 def handle_show(parsed, state, services):
     """SHOW: list the current playlist as an HTML ordered list (R2)."""
-    if len(state.playlist) == 0:
+    count = len(state.playlist)
+    if count == 0:
         return Reply("Your playlist is empty.")
 
-    text = "Your playlist has " + str(len(state.playlist)) + " songs:\n<ol>\n"
+    if count == 1:
+        text = "Your playlist has 1 song:\n<ol>\n"
+    else:
+        text = "Your playlist has " + str(count) + " songs:\n<ol>\n"
     for track_id in state.playlist:
         track = services.db.get(track_id)
-        if track:
-            text = text + "<li>" + describe_track(track) + "</li>\n"
+        text = text + "<li>" + describe_track(track) + "</li>\n"
     text = text + "</ol>"
-    return Reply(
-        text=text,
-        dialogue_acts=[_playlist_act(state.playlist, services.db)]
-    )
-
-
-def handle_remove(parsed, state, services):
-    """Handles removing a track from the playlist by track ID or fuzzy title search."""
-    slots = parsed.slots or {}
-    track_id = slots.get("track_id") or slots.get("id")
-    track_query = slots.get("track") or slots.get("query") or parsed.raw_text
-
-    # 1. Direct match by track_id (e.g., triggered by clicking 'X' in the React frontend panel)
-    if track_id and track_id in state.playlist:
-        track = services.db.get(track_id)
-        t_name = track.name if track else track_id
-        state.playlist.remove(track_id)
-        return Reply(
-            text=f"Removed {t_name} from your playlist.",
-            dialogue_acts=[_playlist_act(state.playlist, services.db)]
-        )
-
-    # 2. Search for matching track title inside the active playlist
-    if track_query:
-        for tid in list(state.playlist):
-            track = services.db.get(tid)
-            if track and (track_query.lower() in track.name.lower() or track_query.strip() == tid):
-                state.playlist.remove(tid)
-                return Reply(
-                    text=f"Removed {track.name} from your playlist.",
-                    dialogue_acts=[_playlist_act(state.playlist, services.db)]
-                )
-
-    # 3. Track not found in playlist
-    return Reply(
-        text="That track is not in your playlist.",
-        dialogue_acts=[_playlist_act(state.playlist, services.db)]
-    )
+    return Reply(text)
 
 
 def handle_clear(parsed, state, services):
@@ -183,51 +337,23 @@ def handle_clear(parsed, state, services):
     state.playlist.clear()
     state.pending_options.clear()
     state.pending_kind = None
-    return Reply(
-        text="Cleared your playlist (" + str(count) + " songs removed).",
-        dialogue_acts=[_playlist_act([], services.db)]
-    )
+    if count == 1:
+        return Reply("Cleared your playlist (1 song removed).")
+    return Reply("Cleared your playlist (" + str(count) + " songs removed).")
+
 
 def handle_help(parsed, state, services):
-    """HELP: explain system capabilities or topic-specific features (R3 - T12)."""
+    """HELP: explain what the system can do, or one feature (R3, T12).
+
+    "what can you do?"         -> every feature, with examples
+    "how do I remove a song?"  -> topic "remove" -> only that explanation
+    """
     topic = parsed.slots.get("topic")
+    if topic is not None and topic in TOPIC_EXPLANATIONS:
+        return Reply(TOPIC_EXPLANATIONS[topic])
 
-    topic_explanations = {
-        "add": "<b>Add songs:</b> Type <i>'add Smells Like Teen Spirit'</i> or <i>'add It's My Life by Bon Jovi'</i>.",
-        "remove": "<b>Remove songs:</b> Type <i>'remove Smells Like Teen Spirit'</i> or click the remove button in the playlist panel.",
-        "show": "<b>Show playlist:</b> Type <i>'show my playlist'</i> or <i>'/list'</i>.",
-        "clear": "<b>Clear playlist:</b> Type <i>'clear my playlist'</i> or <i>'/clear'</i>.",
-        "questions": "<b>Ask questions:</b> You can ask <i>'who sings Hotel California?'</i> or <i>'when was It's My Life released?'</i>.",
-        "recommend": "<b>Get recommendations:</b> Type <i>'recommend something'</i> to get 5 songs based on your playlist.",
-        "create_playlist": "<b>Create a playlist:</b> Type <i>'make me a playlist for the gym'</i>.",
-        "select": "<b>Select options:</b> Type <i>'add the first two'</i> or <i>'all except the Bon Jovi one'</i>."
-    }
-
-    if topic and topic in topic_explanations:
-        return Reply(text=topic_explanations[topic])
-
-    full_help = (
-        "<b>Here is what I can do for you:</b><br>"
-        "• <b>Manage playlist:</b> Add, remove, view, or clear songs.<br>"
-        "• <b>Questions:</b> Ask about track artists, release dates, albums, or track counts.<br>"
-        "• <b>Recommendations:</b> Ask for recommendations based on your current playlist.<br>"
-        "• <b>Smart Selection:</b> Choose options by saying 'the first two', 'all', or 'all except X'."
-    )
-    return Reply(text=full_help)
-
-def _playlist_act(playlist_ids, db):
-    annotations = []
-    for tid in playlist_ids:
-        track = db.get(tid)
-        if track:
-            track_data = {
-                "id": track.track_id,
-                "name": track.name,
-                "artist": track.artists[0] if track.artists else "Unknown",
-                "duration_ms": getattr(track, "duration_ms", 0) or 0
-            }
-            anno = Annotation("track", json.dumps(track_data))
-            anno.slot = "track"
-            anno.slot_address = "track"
-            annotations.append(anno)
-    return DialogueAct(intent=Intent("PLAYLIST"), annotations=annotations)
+    text = "<b>Here is what I can do for you:</b><br>"
+    for name in HELP_ORDER:
+        text = text + "• " + TOPIC_EXPLANATIONS[name] + "<br>"
+    text = text + "You can also type /help at any time."
+    return Reply(text)

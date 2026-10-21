@@ -26,16 +26,26 @@ MAX_TURN_MS = 3000
 # None = the length is not checked (it depends on the LLM or on a decision still open).
 CONVERSATION = [
     ("Hello!", "GREETING", 0),
+    ("what can you do?", "HELP", 0),
     ("add Bad Medicine by Bon Jovi", "ADD", 1),
     ("please add Always by Bon Jovi", "ADD", 1),                    # not in the catalog
     ("add Money, Money, Money by ABBA", "ADD", 1),                  # no ABBA at all
     ("add We Believe by Good Charlotte", "ADD", 1),                 # only the RHCP one exists
-    ("add Wake Me Up When September Ends by Green Day", "ADD", 2),
+    ("add Wake Me Up When September Ends by Green Day", "ADD", 1),  # 2 versions: options
+    ("the first one", "SELECT", 2),
     ("add Disenchanted by My Chemical Romance", "ADD", 3),
-    ("remove Money, Money, Money", "REMOVE", 3),                    # not in the playlist
-    ("show me my playlist", "SHOW", 3),
-    ("recommend me some songs", "RECOMMEND", 3),
-    ("add the first two", "SELECT", 5),
+    ("add Hotel California by the Eagles", "ADD", 3),               # "Eagles" in the catalog: options
+    ("the first one", "SELECT", 4),
+    ("add Goodbye by Chris Young", "ADD", 4),                       # not in the catalog
+    ("add Goodbye", "ADD", 4),                                      # R4: 5 options
+    ("the second one", "SELECT", 5),
+    ("remove Money, Money, Money", "REMOVE", 5),                    # not in the playlist
+    ("remove the Bon Jovi song", "REMOVE", 4),                      # by artist only
+    ("show me my playlist", "SHOW", 4),
+    ("who sings Hotel California?", "ASK_TRACK", 4),
+    ("how many songs does Bon Jovi have?", "ASK_ARTIST", 4),
+    ("recommend me some songs", "RECOMMEND", 4),
+    ("add the first two", "SELECT", 6),
     ("make me a playlist for a rainy evening", "CREATE_PLAYLIST", None),
     ("add Bohemian Rhapsody by Queen", "ADD", None),                # only an a cappella mix
     ("clear my playlist", "CLEAR", 0),

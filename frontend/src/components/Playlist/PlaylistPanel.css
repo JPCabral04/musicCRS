@@ -1,11 +1,12 @@
 .playlist-panel {
-  width: 320px;
-  min-width: 280px;
+  flex: 1 1 300px;
+  max-width: 460px;
+  min-width: 0;
   background-color: #ffffff;
   border-left: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  align-self: stretch;
   box-sizing: border-box;
   padding: 16px;
 }
@@ -83,7 +84,8 @@
 .track-info {
   display: flex;
   flex-direction: column;
-  max-width: 200px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .track-name {

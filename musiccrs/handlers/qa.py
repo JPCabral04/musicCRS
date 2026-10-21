@@ -1,132 +1,182 @@
-"""
-QA Handlers (T10)
-Answers natural language questions about tracks and artists (R5) using
-the database directly (no LLM calls required for generating the answer).
-"""
+"""QA handlers (T10, R5): questions about tracks and artists, answered from the database.
 
+Written by Alejandro (Oct 19). Adapted by JP (Oct 21): the artist lookup also tries the
+name with or without "the" ("the eagles" -> Eagles), and the shortcuts were written out.
+No LLM is used for the answer; the parser (one LLM call) only gives the question type:
+- track (ASK_TRACK):   artist, album, release_year, duration
+- artist (ASK_ARTIST): track_count, top_track, albums, genres
+"""
 import html
+
+from ..data.resolver import artist_key, resolve, resolve_artist
 from ..state import Reply
-from ..data.resolver import resolve
+
+# How many albums and tags an answer lists at most.
+MAX_LISTED = 5
 
 
-def _format_duration(duration_ms: int) -> str:
-    """Converts milliseconds into a user-friendly 'M:SS' format."""
+def _format_duration(duration_ms):
+    """Milliseconds as "M:SS": 301920 -> "5:01". 0 (unknown) -> "unknown duration"."""
     if not duration_ms or duration_ms <= 0:
         return "unknown duration"
     total_seconds = int(duration_ms / 1000)
     minutes = total_seconds // 60
     seconds = total_seconds % 60
-    return f"{minutes}:{seconds:02d}"
+    seconds_text = str(seconds)
+    if seconds < 10:
+        seconds_text = "0" + seconds_text
+    return str(minutes) + ":" + seconds_text
 
 
-def handle_ask_track(parsed, state, services) -> Reply:
+def _release_year(track):
+    """"1991-09-10" -> "1991"; an unknown date ("") -> None."""
+    if len(track.release_date) >= 4:
+        return track.release_date[:4]
+    return None
+
+
+def handle_ask_track(parsed, state, services):
+    """ASK_TRACK (R5): who sings it, which album, which year, how long.
+
+    "who sings Hotel California?" -> "Hotel California - 2013 Remaster is performed by Eagles."
     """
-    Handles questions about tracks (R5): artist, album, release_year, duration.
-    """
-    raw_track = parsed.slots.get("track")
-    raw_artist = parsed.slots.get("artist")
+    track_name = parsed.slots.get("track")
+    artist = parsed.slots.get("artist")
     question = parsed.slots.get("question")
 
-    if not raw_track and not raw_artist:
-        return Reply("Which track are you asking about?")
+    if track_name is None:
+        return Reply("Which song are you asking about?")
 
-    candidates = resolve(services.db, raw_track, raw_artist)
-    if not candidates:
-        safe_t = html.escape(raw_track or "", quote=False)
-        return Reply(f"I couldn't find '{safe_t}' in the database.")
+    candidates = resolve(services.db, track_name, artist)
+    if len(candidates) == 0:
+        safe_name = html.escape(track_name, quote=False)
+        return Reply("I couldn't find '" + safe_name + "' in the catalog.")
 
-    # Pick the top resolved track
+    # The resolver gives the most popular exact match first.
     track = candidates[0]
-    t_name = html.escape(track.name, quote=False)
-    main_artist = html.escape(track.artists[0] if track.artists else "Unknown", quote=False)
+    name = html.escape(track.name, quote=False)
+    main_artist = html.escape(track.artists[0], quote=False)
 
     if question == "artist":
-        artists_str = ", ".join([html.escape(a, quote=False) for a in track.artists])
-        return Reply(f"<b>{t_name}</b> is performed by <b>{artists_str}</b>.")
+        safe_artists = []
+        for artist_name in track.artists:
+            safe_artists.append(html.escape(artist_name, quote=False))
+        return Reply("<b>" + name + "</b> is performed by <b>" + ", ".join(safe_artists) + "</b>.")
 
-    elif question == "album":
-        album = html.escape(track.album or "Unknown Album", quote=False)
-        return Reply(f"<b>{t_name}</b> by {main_artist} is on the album <b>'{album}'</b>.")
+    if question == "album":
+        if track.album == "":
+            return Reply("I don't know the album of <b>" + name + "</b> by " + main_artist + ".")
+        album = html.escape(track.album, quote=False)
+        return Reply("<b>" + name + "</b> by " + main_artist + " is on the album <b>"
+                     + album + "</b>.")
 
-    elif question == "release_year":
-        date = track.release_date
-        year = date[:4] if date and len(date) >= 4 else "unknown"
-        if year != "unknown":
-            return Reply(f"<b>{t_name}</b> by {main_artist} was released in <b>{year}</b>.")
-        return Reply(f"I don't have the release year for <b>{t_name}</b> by {main_artist}.")
+    if question == "release_year":
+        year = _release_year(track)
+        if year is None:
+            return Reply("I don't have the release year of <b>" + name + "</b> by "
+                         + main_artist + ".")
+        return Reply("<b>" + name + "</b> by " + main_artist + " was released in <b>"
+                     + year + "</b>.")
 
-    elif question == "duration":
-        dur = _format_duration(track.duration_ms)
-        return Reply(f"<b>{t_name}</b> by {main_artist} is <b>{dur}</b> long.")
+    if question == "duration":
+        return Reply("<b>" + name + "</b> by " + main_artist + " is <b>"
+                     + _format_duration(track.duration_ms) + "</b> long.")
 
-    # General fallback if question slot was unmapped or missing
-    dur = _format_duration(track.duration_ms)
-    year = track.release_date[:4] if track.release_date and len(track.release_date) >= 4 else "unknown"
-    album = html.escape(track.album or "Unknown", quote=False)
-    return Reply(
-        f"<b>{t_name}</b> by <b>{main_artist}</b> (Album: <i>{album}</i>, Year: {year}, Duration: {dur})."
-    )
+    # No question type: a short summary of the song.
+    year = _release_year(track)
+    if year is None:
+        year = "unknown"
+    album = html.escape(track.album, quote=False)
+    if album == "":
+        album = "unknown"
+    return Reply("<b>" + name + "</b> by <b>" + main_artist + "</b> (album: <i>" + album
+                 + "</i>, year: " + year + ", duration: " + _format_duration(track.duration_ms)
+                 + ").")
 
 
-def handle_ask_artist(parsed, state, services) -> Reply:
+def handle_ask_artist(parsed, state, services):
+    """ASK_ARTIST (R5): how many songs, most popular song, albums, genres.
+
+    "how many songs does Bon Jovi have?" -> "We have 32 tracks by Bon Jovi in the catalog."
     """
-    Handles questions about artists (R5): track_count, top_track, albums, genres.
-    """
-    raw_artist = parsed.slots.get("artist") or parsed.slots.get("track")
+    artist = parsed.slots.get("artist")
     question = parsed.slots.get("question")
 
-    if not raw_artist:
+    # The parser sometimes puts the artist's name in the track slot.
+    if artist is None and "track" in parsed.slots:
+        artist = parsed.slots["track"]
+    if artist is None:
         return Reply("Which artist are you asking about?")
 
-    tracks = services.db.artist_tracks(raw_artist)
-    if not tracks:
-        safe_a = html.escape(raw_artist, quote=False)
-        return Reply(f"I couldn't find any tracks by '{safe_a}' in the catalog.")
+    # Most popular first; also tries the name with or without "the".
+    tracks = resolve_artist(services.db, artist)
+    if len(tracks) == 0:
+        safe_artist = html.escape(artist, quote=False)
+        return Reply("I couldn't find any tracks by '" + safe_artist + "' in the catalog.")
 
-    main_artist = html.escape(tracks[0].artists[0] if tracks[0].artists else raw_artist, quote=False)
+    # The artist's name as the catalog writes it ("the eagles" -> "Eagles").
+    main_artist = html.escape(artist, quote=False)
+    for name in tracks[0].artists:
+        if artist_key(name) == artist_key(artist):
+            main_artist = html.escape(name, quote=False)
+
+    count = len(tracks)
+    top_name = html.escape(tracks[0].name, quote=False)
 
     if question == "track_count":
-        count = len(tracks)
-        return Reply(f"We have <b>{count}</b> track{'s' if count != 1 else ''} by <b>{main_artist}</b> in the catalog.")
+        if count == 1:
+            return Reply("We have <b>1</b> track by <b>" + main_artist + "</b> in the catalog.")
+        return Reply("We have <b>" + str(count) + "</b> tracks by <b>" + main_artist
+                     + "</b> in the catalog.")
 
-    elif question == "top_track":
-        # Tracks from db.artist_tracks or sorted by popularity
-        top_t = max(tracks, key=lambda x: x.popularity)
-        t_name = html.escape(top_t.name, quote=False)
-        return Reply(f"The most popular track by <b>{main_artist}</b> in our catalog is <b>{t_name}</b>.")
+    if question == "top_track":
+        return Reply("The most popular track by <b>" + main_artist + "</b> in our catalog is <b>"
+                     + top_name + "</b>.")
 
-    elif question == "albums":
-        albums = list({t.album for t in tracks if t.album})
-        if not albums:
-            return Reply(f"I couldn't find album information for <b>{main_artist}</b>.")
-        
-        safe_albums = [html.escape(a, quote=False) for a in albums[:5]]
-        text = f"Albums by <b>{main_artist}</b> include: " + ", ".join([f"<i>{a}</i>" for a in safe_albums])
-        if len(albums) > 5:
-            text += f" and {len(albums) - 5} more."
-        return Reply(text)
+    if question == "albums":
+        # Album names in order of the artist's most popular tracks, each once.
+        albums = []
+        for track in tracks:
+            if track.album != "" and track.album not in albums:
+                albums.append(track.album)
+        if len(albums) == 0:
+            return Reply("I couldn't find album information for <b>" + main_artist + "</b>.")
 
-    elif question == "genres":
-        all_tags = []
-        for t in tracks:
-            all_tags.extend(t.tags)
-        
-        if not all_tags:
-            return Reply(f"I don't have genre or tag information for <b>{main_artist}</b>.")
+        safe_albums = []
+        for album in albums[:MAX_LISTED]:
+            safe_albums.append("<i>" + html.escape(album, quote=False) + "</i>")
+        text = "Albums by <b>" + main_artist + "</b> include: " + ", ".join(safe_albums)
+        if len(albums) > MAX_LISTED:
+            text = text + " and " + str(len(albums) - MAX_LISTED) + " more"
+        return Reply(text + ".")
 
-        # Rank tags by frequency
+    if question == "genres":
+        # Count how many of the artist's tracks carry each tag. "Rock" and "rock" are the
+        # same tag: count them together and show the first spelling seen.
         tag_counts = {}
-        for tag in all_tags:
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        tag_spelling = {}
+        for track in tracks:
+            for tag in track.tags:
+                key = tag.lower()
+                if key not in tag_counts:
+                    tag_counts[key] = 0
+                    tag_spelling[key] = tag
+                tag_counts[key] = tag_counts[key] + 1
+        if len(tag_counts) == 0:
+            return Reply("I don't have genre or tag information for <b>" + main_artist + "</b>.")
 
-        sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
-        top_tags = [html.escape(t[0], quote=False) for t in sorted_tags[:5]]
-        return Reply(f"Popular tags/genres for <b>{main_artist}</b> include: <b>" + ", ".join(top_tags) + "</b>.")
+        # (count, tag) pairs: sorting them puts the most frequent tag first.
+        pairs = []
+        for key in tag_counts:
+            pairs.append((tag_counts[key], tag_spelling[key]))
+        pairs.sort(reverse=True)
 
-    # Fallback response for the artist
-    count = len(tracks)
-    top_t = max(tracks, key=lambda x: x.popularity)
-    t_name = html.escape(top_t.name, quote=False)
-    return Reply(
-        f"<b>{main_artist}</b> has {count} track(s) in the catalog. Top track: <b>{t_name}</b>."
-    )
+        top_tags = []
+        for tag_count, tag in pairs[:MAX_LISTED]:
+            top_tags.append(html.escape(tag, quote=False))
+        return Reply("Popular tags/genres for <b>" + main_artist + "</b> include: <b>"
+                     + ", ".join(top_tags) + "</b>.")
+
+    # No question type: a short summary of the artist.
+    return Reply("<b>" + main_artist + "</b> has " + str(count) + " track(s) in the catalog. "
+                 "Top track: <b>" + top_name + "</b>.")

@@ -7,15 +7,11 @@ into a number of songs (playlist_length), and searches with text_to_item_retriev
 """
 import html
 
-from dialoguekit.core.dialogue_act import DialogueAct
-from dialoguekit.core.intent import Intent
-from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
-
 from retrieval.context import SessionPolicy, TurnContext
 
 from ..data.db import normalize
 from ..llm import ask_json
-from .playlist import describe_track
+from .playlist import describe_track, options_act
 from .selection import clear_pending
 from ..state import Reply
 
@@ -59,9 +55,6 @@ User: 80s rock for a 2 hour drive
 User: a few songs to wake up
 {"query": "upbeat happy morning pop", "minutes": 15}"""
 
-_INTENT_OPTIONS = Intent("OPTIONS")
-
-
 def recommend_context(playlist):
     """The playlist as a Part 1 TurnContext, so FinalRetriever can score it.
 
@@ -88,21 +81,6 @@ def recommend_context(playlist):
         played_track_ids=tuple(playlist),
         baseline_query="",
     )
-
-
-def options_act(tracks):
-    """The shown songs as one OPTIONS dialogue act (for the UI and the simulator).
-
-    One annotation per song, numbered from 1:
-    SlotValueAnnotation("option", "1. Come As You Are — Nirvana")
-    """
-    annotations = []
-    number = 1
-    for track in tracks:
-        value = str(number) + ". " + track.name + " — " + track.artists[0]
-        annotations.append(SlotValueAnnotation("option", value))
-        number = number + 1
-    return DialogueAct(intent=_INTENT_OPTIONS, annotations=annotations)
 
 
 def playlist_artists(playlist, db):
