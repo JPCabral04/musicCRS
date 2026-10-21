@@ -16,7 +16,7 @@ Effort scale: easy = 1, medium = 2, hard = 3.
 | Features | T4 **R6 recommend** 3–5 songs from the playlist | 1 | T8 **R4 disambiguation** ("Love" → pick one), ranked | 2 |
 | | T9 **R8 playlist from a description** ("sad love songs") | 2 | T10 **R5 questions** about tracks and artists | 2 |
 | | T11 **R7 selection** ("add the first two", "all except the Metallica one") | 3 | T12 **R3 help** ("what can you do?") | 1 |
-| Delivery | T13 simulator config + latency check | 1 | T14 demo script + README section | 1 |
+| Delivery | T13 latency check (was: simulator config) | 1 | T14 demo script + README section | 1 |
 | **Total** | | **14** | | **14** |
 
 - **Why it's fair:** each person has one hard foundation piece (JP: the intent parser; Alejandro: the playlist panel and the track resolver), one hard NL feature (JP: R7; Alejandro: the resolver behind R2/R4), and the same total effort.
@@ -104,7 +104,7 @@ Each task: **what** → **file** → **done when**.
 → `musiccrs/nlu/parser.py` → done when 20 example sentences (≥ 2 per intent) parse correctly. **After T3, the interfaces are frozen.** **Done Oct 19:** 37/37 sentences correct, 0.45 s per LLM call on average (`python -m musiccrs.checks.check_nlu`). Also `musiccrs/llm.py` (LLM client, key from the `LLM_API_KEY` environment variable) and `musiccrs/nlu/prompt.py`. Slot names and the 8 question types: detailed plan §3.3.
 
 **Alejandro — T6. Track resolver.** Given a name (and maybe an artist), return the matching tracks: exact normalized match first, then fuzzy.
-→ `musiccrs/data/resolver.py` → done when "its my life", "IT'S MY LIFE!" and "it's my life by bon jovi" all find the Bon Jovi track.
+→ `musiccrs/data/resolver.py` → done when "its my life", "IT'S MY LIFE!" and "it's my life by bon jovi" all find the Bon Jovi track. **Done Oct 19 (Alejandro, PR #14); adapted Oct 21 (JP):** a fuzzy match must keep the artist when one is given ("Always" by Bon Jovi used to offer blink-182), and "the" is ignored in artist names ("the eagles" → Eagles). Checked by `python -m musiccrs.checks.check_handlers`.
 
 ### Sat Oct 17 – Tue Oct 20
 
@@ -120,35 +120,36 @@ Suggested order (JP's updated Oct 19, after T3 took until Mon): JP **T4 (Mon) �
 → `musiccrs/handlers/selection.py` → done when ≥ 3 formulations work, including an "except" one. **Done Oct 19:** all, none, ordinals ("the first two", "1 and 3", "the last one") by rules with no LLM call; "all except the one by Bon Jovi", "everything but Toxic" and "the Coldplay one" by one LLM call (344 ms mean). 16/16 rule and 6/6 LLM cases pass (`python -m musiccrs.checks.check_select`). A whole SELECT turn (parser + selection) takes 0.4–1.1 s. Also works for R4 same-name choices (exactly one is added), so T8 only has to set `pending_kind="disambiguation"`. The catalog has only one Metallica track, so demos use Bon Jovi.
 
 **Alejandro — T7. R2 handlers.** Add / remove / view / clear, using T6. Refuse songs that are not in the database, with a clear message.
-→ `musiccrs/handlers/playlist.py` → done when all 4 actions work in natural language and the panel updates.
+→ `musiccrs/handlers/playlist.py` → done when all 4 actions work in natural language and the panel updates. **Done Oct 19–21 (Alejandro, PR #14); adapted Oct 21 (JP):** remove by title and/or artist with `normalize` ("remove the Queen song" crashed: `parsed.raw_text` does not exist), and the `PLAYLIST` act is sent once, by the agent.
 
 **Alejandro — T8. R4 disambiguation.** If T6 returns several tracks, show the top 5 as clickable options. Rank them by popularity plus similarity to the playlist (same artist, BPR vectors from Part 1).
-→ `musiccrs/handlers/playlist.py` → done when "add Love" shows 5 options and clicking or typing "the second one" adds it.
+→ `musiccrs/handlers/playlist.py` → done when "add Love" shows 5 options and clicking or typing "the second one" adds it. **Done Oct 19 (Alejandro); adapted Oct 21 (JP):** the BPR signal now really comes from the Part 1 retriever (it was never used), and the options are buttons in the chat that send `/select <n>` (no LLM).
 
 **Alejandro — T10. R5 questions.** 4 question types for tracks (artist, album, release year, length) and 4 for artists (number of songs, most popular song, albums, genres/tags). Answers come from the database, not the LLM.
-→ `musiccrs/handlers/qa.py` → done when all 8 types answer correctly in natural language.
+→ `musiccrs/handlers/qa.py` → done when all 8 types answer correctly in natural language. **Done Oct 19 (Alejandro); adapted Oct 21 (JP):** artist questions accept "the" ("how many songs do the Eagles have?").
 
 **Alejandro — T12. R3 help.** "What can you do?", "help", "how do I remove a song?" → a short explanation with examples.
-→ `musiccrs/handlers/playlist.py` → done when 3 different phrasings get a useful answer.
+→ `musiccrs/handlers/playlist.py` → done when 3 different phrasings get a useful answer. **Done Oct 19 (Alejandro); Oct 21 (JP):** R8 added to the full help, and a GREETING reply.
 
-**Alejandro — T5. Playlist panel (finish).** Connect it to the real `PLAYLIST` message: remove and clear buttons, plus an add box.
+**Alejandro — T5. Playlist panel (finish).** Connect it to the real `PLAYLIST` message: remove and clear buttons, plus an add box. **Done Oct 21 (Alejandro, PR #14).** His `tsconfig.json` change was dropped (`moduleResolution: "bundler"` needs TypeScript 5; we have 4.9.5).
 
 ### Wed Oct 21 — sync meeting
 
 - Each person runs the *other's* code from a fresh `git pull`.
-- **JP — T13:** set `COMMANDS` in `simulation/config.py` to our real slash commands; run `python simulation/simulator.py --no-upload`; write down the time per intent.
+- **JP — T13 (changed Oct 20):** the course simulator is from the 2025 course, is not in the 2026 Part 2 spec, and needs an upload token we did not get, so T13 became a latency check: a GREETING reply, the time of every turn printed by the backend, a retriever warm-up at startup (the first R8 search cost 894 ms, later ones ~150 ms), and `python -m musiccrs.checks.check_latency` (a scripted conversation with the simulator's hard cases). **Done Oct 20–21:** every turn under 3 s (detailed plan §7).
+- **Merge (Oct 21, JP):** Alejandro's PR #14 merged into `jp/latency`. An old commit of his (Oct 4) would have silently undone Part 1 work (`fusion` method, BPR loader, results log); those files were kept as in `main`.
 - Fix whatever breaks. Merge everything into `main`.
 
 ### Thu Oct 22 – Fri Oct 23
 
-- **Alejandro — T14:** a demo script with one example line per requirement (R1–R8), plus a short README section.
+- **Alejandro — T14:** a demo script with one example line per requirement (R1–R8), plus a short README section. **Done Oct 21 (JP, to have it before the presentation):** `docs/part2_demo.md` (it replaces `docs/how_to_run.md`) and "Part 2: how to run and demo" in the README.
 - Buffer for whatever is still failing (these two days exist so that nothing is cut).
 
 ### Sat Oct 24 – Mon Oct 26
 
 - Rehearse the demo end to end with the script.
 - Mock exam: each person explains the **other's** code.
-- Final simulator run **with upload** (only the last upload counts).
+- ~~Final simulator run with upload~~ (dropped Oct 20: the simulator is not part of the 2026 grade).
 
 ### Tue Oct 27 — go / no-go
 
@@ -174,8 +175,9 @@ conda activate musiccrs
 python -m musiccrs.data.build_db                      # once: builds cache/musiccrs.db
 python -m musiccrs.musiccrs                      # backend on :5000 (as a module, from the repo root)
 cd frontend && npm start                         # frontend on :3000
-python simulation/simulator.py --no-upload       # needs the backend running
-python simulation/simulator.py                   # final run, uploads
+python -m musiccrs.checks.check_handlers        # resolver, R2-R5 handlers (no key, ~1 s)
+python -m musiccrs.checks.check_latency         # 25-turn conversation, < 3 s per turn (needs the key)
+# Full demo script and every check: docs/part2_demo.md
 ```
 
 ---
@@ -185,4 +187,4 @@ python simulation/simulator.py                   # final run, uploads
 - **The presentation date:** book an Oct 28 slot early (few slots, no rebooking). Part 3 is also due Oct 28, so check that both fit.
 - **LLM key:** does the Open WebUI key work at `https://openwebui.ux.uis.no` (Gemma 4 31B), and how long does one call take?
 - **Startup and dense:** does loading `FinalRetriever` (Qwen3 model) at startup work on the demo laptop, and is R6/R8 still under 3–5 s? If not, R6/R8 run without dense. (On JP's GPU laptop: 45–51 s startup, R6 in 10 ms.)
-- **Simulator:** which slash commands does it really send? Check its first `--no-upload` run before Oct 21.
+- ~~**Simulator:** which slash commands does it really send?~~ Resolved Oct 20: not used (2025 tool, no upload token); its default `COMMANDS` already match ours, and its hard cases are in `check_latency`.

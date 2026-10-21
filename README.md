@@ -6,6 +6,21 @@ It has some basic functionality to provide static responses (type `/info`), disp
 
 ![Example](musiccrs_example.png)
 
+## Part 2: how to run and demo
+
+Our MusicCRS manages a playlist and recommends songs in natural language (R1–R8):
+
+- **Chat + playlist panel (R1):** the playlist is shown next to the chat; songs can be added, removed and cleared from the panel too.
+- **Playlist in natural language (R2):** "add It's My Life by Bon Jovi", "remove the Queen song", "show my playlist", "clear it". Only catalog songs (47,071), names matched loosely.
+- **Help (R3):** "what can you do?", "how do I remove a song?".
+- **Same-name choices (R4):** "add Love" shows 5 songs as buttons, ranked by popularity and similarity to the playlist.
+- **Questions (R5):** 4 about a song (artist, album, year, length) and 4 about an artist (number of songs, most popular song, albums, genres), answered from the database.
+- **Recommendations (R6):** 5 songs related to the playlist, from our Part 1 retriever.
+- **Choosing (R7):** "the first two", "all of them", "none", "all except the one by Bon Jovi", or a click.
+- **Playlist from a description (R8):** "make me a playlist of sad love songs"; the length is chosen from the description.
+
+Setup, start, the demo script (one line per requirement) and the checks: [docs/part2_demo.md](docs/part2_demo.md).
+
 ## Backend (Conversational Agent)
 
 The code for the conversational agent is found under the [musiccrs](musiccrs/) folder. It is based on the [DialogueKit](https://github.com/iai-group/DialogueKit) toolkit and assumes **Python 3.11**.
@@ -23,7 +38,7 @@ python -m musiccrs.data.build_db     # once: writes cache/musiccrs.db
 python -m musiccrs.musiccrs     # run as a module, so the package imports work
 ```
 
-The server will be running on <http://127.0.0.1:5000>. Step-by-step run and browser test: [docs/how_to_run.md](docs/how_to_run.md).
+The server will be running on <http://127.0.0.1:5000>. Step-by-step run, demo and checks: [docs/part2_demo.md](docs/part2_demo.md).
 
 Leave the terminal open to keep the server running. Open a new terminal window to set up and start the frontend.
 
