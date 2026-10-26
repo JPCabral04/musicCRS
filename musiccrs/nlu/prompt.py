@@ -19,7 +19,7 @@ Intents:
 - HELP: what the assistant can do, or how to use one feature. Slot: topic.
 - ASK_TRACK: a question about one song. Slots: track, artist, question.
 - ASK_ARTIST: a question about an artist. Slots: artist, question.
-- RECOMMEND: songs that fit the current playlist. Slot: different.
+- RECOMMEND: songs that fit the current playlist, or songs like one song or artist the user names. Slots: track, artist, different.
 - CREATE_PLAYLIST: a new playlist from a description (mood, activity, genre, occasion). Slot: description.
 - SELECT: a choice among the options just shown ("the second one", "all of them", "none"). Slot: selection.
 - GREETING: hello, hi, thanks.
@@ -68,6 +68,8 @@ User: how many songs by Adele do you have?
 {"intent": "ASK_ARTIST", "slots": {"artist": "Adele", "question": "track_count"}}
 User: give me songs like these but by other artists
 {"intent": "RECOMMEND", "slots": {"different": true}}
+User: recommend me something like Numb by Linkin Park
+{"intent": "RECOMMEND", "slots": {"track": "Numb", "artist": "Linkin Park"}}
 User: make me a playlist for a rainy sunday morning
 {"intent": "CREATE_PLAYLIST", "slots": {"description": "a rainy sunday morning"}}
 User (options pending): I'll take the third and the fourth
