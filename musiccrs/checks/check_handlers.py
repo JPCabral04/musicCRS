@@ -17,7 +17,7 @@ from ..handlers.playlist import (NUM_OPTIONS, handle_add, handle_clear, handle_h
 from ..handlers.qa import (_format_duration, handle_ask_artist, handle_ask_track,
                            looks_like_compilation)
 from ..handlers.selection import handle_select
-from ..nlu.parser import parse_command
+from ..nlu.parser import parse, parse_command
 from ..state import DialogueState, ParsedIntent, Services
 
 problems = []
@@ -97,6 +97,13 @@ def check_add_and_select(services, state):
     first_option = db.get(state.pending_options[0])
     check("<i>(" + first_option.album in reply.text,
           "add Love -> the options show their album (" + first_option.album + ")")
+
+    # With options pending, a choice the R7 rules understand is a SELECT without the LLM.
+    parsed = parse("the first one", state, None)
+    check(parsed.name == "SELECT" and parsed.slots == {"selection": "the first one"},
+          "'the first one' with options pending -> SELECT without the LLM")
+    parsed = parse("show my playlist", state, None)
+    check(parsed.name == "UNKNOWN", "'show my playlist' with options pending -> not a SELECT")
 
     second_choice = state.pending_options[1]
     parsed = parse_command("/select 2")

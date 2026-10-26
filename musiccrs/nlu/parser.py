@@ -1,4 +1,5 @@
 """Understanding the user's message (T2: slash commands by rules; T3 adds the LLM parser)."""
+from ..handlers.selection import rule_indices
 from ..llm import ask_json
 from .prompt import PROMPT_TEMPLATE
 from ..state import ParsedIntent
@@ -239,6 +240,8 @@ def parse(text, state, llm):
         -> ParsedIntent("ADD", {"track": "hotel california", "artist": "the eagles"})    (1 LLM call)
     "what's the weather?"
         -> ParsedIntent("UNKNOWN", {"text": "what's the weather?"})
+    "the first one", with 2 options pending
+        -> ParsedIntent("SELECT", {"selection": "the first one"})                       (no LLM)
     any free text when llm is None (no API key)
         -> ParsedIntent("UNKNOWN", {"text": ...})
     """
@@ -247,17 +250,25 @@ def parse(text, state, llm):
     if parsed is not None:
         return parsed
 
-    # 2. Without an LLM client, free text cannot be understood.
+    # 2. Options are pending and the R7 rules understand every word ("the first one",
+    #    "all of them", "none", "1 and 3"): a selection, no LLM. Anything else
+    #    ("all except the one by Metallica", "show my playlist") still goes to the LLM.
+    if len(state.pending_options) > 0:
+        indices = rule_indices(text, len(state.pending_options))
+        if indices is not None:
+            return ParsedIntent("SELECT", {"selection": text})
+
+    # 3. Without an LLM client, free text cannot be understood.
     if llm is None:
         return ParsedIntent("UNKNOWN", {"text": text})
 
-    # 3. One LLM call (two if the first answer has no valid JSON).
+    # 4. One LLM call (two if the first answer has no valid JSON).
     #    The system message holds the rules; the user message is only the user's text.
     system_message = {"role": "system", "content": build_prompt(state)}
     user_message = {"role": "user", "content": text}
     data = ask_json(llm, [system_message, user_message])
 
-    # 4. Keep only allowed intents and slots. A failed call (data is None) gives UNKNOWN.
+    # 5. Keep only allowed intents and slots. A failed call (data is None) gives UNKNOWN.
     parsed = to_parsed_intent(data)
 
     # On UNKNOWN, keep the user's own words, as parse_command does for "/play".
