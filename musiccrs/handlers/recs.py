@@ -1,7 +1,8 @@
 """Recommendation handlers: RECOMMEND (R6, T4) and CREATE_PLAYLIST (R8, T9).
 
 R6 reuses the Part 1 FinalRetriever: the playlist plays the role of the tracks
-already played in a dataset session.
+already played in a dataset session. When the user names a song or an artist
+("songs like Numb by Linkin Park"), those songs play that role instead.
 R8 turns the description into a search query and a duration (one LLM call), the duration
 into a number of songs (playlist_length), and searches with text_to_item_retrieval.
 """
@@ -10,6 +11,7 @@ import html
 from retrieval.context import SessionPolicy, TurnContext
 
 from ..data.db import normalize
+from ..data.resolver import resolve, resolve_artist
 from ..llm import ask_json
 from .playlist import describe_track, options_act
 from .selection import clear_pending
@@ -18,9 +20,20 @@ from ..state import Reply
 # How many songs R6 shows (the spec asks for 3-5).
 NUM_RECOMMENDATIONS = 5
 
+# How many candidates R6 fetches before the per-artist limit is applied. A playlist of
+# Linkin Park and Slipknot songs had only those two artists in its top 30 (Oct 26).
+NUM_CANDIDATES = 100
+
+# With several artists in the playlist, at most this many recommended songs share one
+# main artist, so one artist with many similar songs does not fill the whole list.
+MAX_PER_ARTIST = 2
+
 # "Something different": how many candidates to fetch before the playlist's artists
 # are filtered out (most of the top ones can be by those artists).
 NUM_CANDIDATES_DIFFERENT = 50
+
+# "Songs like Linkin Park": how many of the artist's most popular songs stand for the artist.
+NUM_ARTIST_SEEDS = 3
 
 # R8 playlist length. The catalog's mean track duration (tracks with a known duration,
 # counted by build_db on Oct 15) turns the minutes the playlist should last into songs.
@@ -56,7 +69,7 @@ User: a few songs to wake up
 {"query": "upbeat happy morning pop", "minutes": 15}"""
 
 def recommend_context(playlist):
-    """The playlist as a Part 1 TurnContext, so FinalRetriever can score it.
+    """The playlist (or the seed songs) as a Part 1 TurnContext, so FinalRetriever can score it.
 
     ["id-nirvana", "id-eagles"] ->
         TurnContext(turn_number=3, current_message="",
@@ -119,14 +132,119 @@ def drop_playlist_artists(candidate_ids, playlist, db, limit):
     return kept
 
 
+def main_artist_key(track):
+    """The track's main artist, normalized: It's My Life (Bon Jovi) -> "bon jovi"."""
+    return normalize(track.artists[0])
+
+
+def per_artist_limit(playlist, db):
+    """How many recommended songs may share one main artist.
+
+    Only Coldplay songs in the playlist           -> 5 (more Coldplay is what fits)
+    Coldplay, Linkin Park and 21 Savage songs     -> 2 (a mix of artists)
+    """
+    main_artists = []
+    for track_id in playlist:
+        key = main_artist_key(db.get(track_id))
+        if key not in main_artists:
+            main_artists.append(key)
+
+    if len(main_artists) == 1:
+        return NUM_RECOMMENDATIONS
+    return MAX_PER_ARTIST
+
+
+def limit_per_artist(candidate_ids, max_per_artist, db, limit):
+    """The first `limit` candidates, with at most `max_per_artist` songs per main artist.
+
+    max_per_artist=2: [LP 1, LP 2, LP 3, Future 1, LP 4, Coldplay 1, ...]
+                   -> [LP 1, LP 2, Future 1, Coldplay 1, ...]
+
+    If too few artists are among the candidates, the skipped songs fill the list,
+    in their order, so the user still gets `limit` songs:
+    max_per_artist=2, limit=5, only LP and Slipknot -> [LP 1, LP 2, SK 1, SK 2, LP 3]
+    """
+    kept = []
+    skipped = []
+    # Main artist -> how many of their songs are kept so far.
+    counts = {}
+    for track_id in candidate_ids:
+        key = main_artist_key(db.get(track_id))
+        if key not in counts:
+            counts[key] = 0
+
+        if counts[key] < max_per_artist:
+            kept.append(track_id)
+            counts[key] = counts[key] + 1
+        else:
+            skipped.append(track_id)
+        if len(kept) == limit:
+            return kept
+
+    # Not enough artists: fill up with the skipped songs, best first.
+    for track_id in skipped:
+        if len(kept) == limit:
+            break
+        kept.append(track_id)
+    return kept
+
+
+def seed_tracks(parsed, db):
+    """The songs to base the recommendations on when the user names a song or an artist.
+
+    {"track": "numb", "artist": "linkin park"} -> [Numb (Linkin Park)]  (the best match)
+    {"artist": "21 savage"}                   -> the 3 most popular 21 Savage songs
+    a song or artist not in the catalog       -> []
+    """
+    track_name = parsed.slots.get("track")
+    artist = parsed.slots.get("artist")
+
+    if track_name is not None:
+        matches = resolve(db, track_name, artist)
+        if len(matches) == 0:
+            return []
+        return [matches[0].track_id]
+
+    seeds = []
+    for track in resolve_artist(db, artist)[:NUM_ARTIST_SEEDS]:
+        seeds.append(track.track_id)
+    return seeds
+
+
+def drop_songs(candidate_ids, playlist):
+    """The candidates that are not in the playlist (needed when the seed is not the playlist)."""
+    kept = []
+    for track_id in candidate_ids:
+        if track_id not in playlist:
+            kept.append(track_id)
+    return kept
+
+
 def handle_recommend(parsed, state, services):
-    """RECOMMEND (R6): 5 songs related to the playlist, none already in it."""
-    if len(state.playlist) == 0:
-        state.pending_options = []
-        state.pending_kind = None
-        return Reply("Your playlist is empty, so I have nothing to base recommendations on. "
-                     "Add a few songs first, or ask me to make a playlist for you "
-                     "(for example: 'make me a playlist for the gym').")
+    """RECOMMEND (R6): 5 songs related to the playlist, or to a named song or artist,
+    none already in the playlist."""
+    # "songs like Numb by Linkin Park": the parser gives a track and/or an artist.
+    named_seed = False
+    if "track" in parsed.slots or "artist" in parsed.slots:
+        named_seed = True
+
+    if named_seed:
+        base_ids = seed_tracks(parsed, services.db)
+        if len(base_ids) == 0:
+            asked = parsed.slots.get("track")
+            if asked is None:
+                asked = parsed.slots.get("artist")
+            return Reply("Sorry, I could not find '" + html.escape(asked, quote=False)
+                         + "' in the catalog, so I cannot recommend songs like it.")
+    else:
+        if len(state.playlist) == 0:
+            state.pending_options = []
+            state.pending_kind = None
+            return Reply("Your playlist is empty, so I have nothing to base recommendations on. "
+                         "Add a few songs first, ask for songs like one you know "
+                         "(for example: 'songs like Numb by Linkin Park'), or ask me to make "
+                         "a playlist for you (for example: 'make me a playlist for the gym').")
+        base_ids = state.playlist
 
     # The parser sets the "different" slot only when it is true
     # ("recommend something different, not the same artists").
@@ -134,17 +252,26 @@ def handle_recommend(parsed, state, services):
     if "different" in parsed.slots:
         different = True
 
-    ctx = recommend_context(state.playlist)
+    ctx = recommend_context(base_ids)
     if different:
-        # Same-artist list off, then the playlist's artists are left out of the result.
+        # Same-artist list off, then the base songs' artists are left out of the result.
         policy = SessionPolicy(use_same_artist=False)
         candidate_ids = services.retriever.retrieve(ctx, NUM_CANDIDATES_DIFFERENT, policy)
-        track_ids = drop_playlist_artists(candidate_ids, state.playlist, services.db,
-                                          NUM_RECOMMENDATIONS)
+        candidate_ids = drop_playlist_artists(candidate_ids, base_ids, services.db,
+                                              NUM_CANDIDATES_DIFFERENT)
+        max_per_artist = MAX_PER_ARTIST
     else:
-        # Default policy: songs already in the playlist are never recommended.
+        # Default policy: the base songs themselves are never recommended.
         policy = SessionPolicy()
-        track_ids = services.retriever.retrieve(ctx, NUM_RECOMMENDATIONS, policy)
+        candidate_ids = services.retriever.retrieve(ctx, NUM_CANDIDATES, policy)
+        max_per_artist = per_artist_limit(base_ids, services.db)
+
+    # Songs already in the playlist are never recommended, whatever the base was.
+    candidate_ids = drop_songs(candidate_ids, state.playlist)
+
+    # At most max_per_artist songs by one main artist, in the retriever's order.
+    track_ids = limit_per_artist(candidate_ids, max_per_artist, services.db,
+                                 NUM_RECOMMENDATIONS)
 
     if len(track_ids) == 0:
         return Reply("Sorry, I could not find any songs to recommend right now.")
@@ -157,7 +284,19 @@ def handle_recommend(parsed, state, services):
     state.pending_options = track_ids
     state.pending_kind = "recommendation"
 
-    if different:
+    # What the songs are like: the named song, the named artist, or the playlist.
+    if named_seed and "track" in parsed.slots:
+        about = describe_track(services.db.get(base_ids[0]))
+    elif named_seed:
+        about = html.escape(parsed.slots["artist"], quote=False)
+    else:
+        about = None
+
+    if about is not None and different:
+        text = "Songs like <b>" + about + "</b>, by other artists:\n<ol>\n"
+    elif about is not None:
+        text = "Songs like <b>" + about + "</b>:\n<ol>\n"
+    elif different:
         text = "Something different from the artists in your playlist:\n<ol>\n"
     else:
         text = "Based on your playlist, you might like:\n<ol>\n"

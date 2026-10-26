@@ -80,19 +80,19 @@ about 0.3–0.9 s for one LLM call, 1–3 s for R8 (two calls).
 
 | # | Req | Type / do | Expected |
 | --- | --- | --- | --- |
-| 1 | R3 | `Hello!` | "Hi! I can add and remove songs in your playlist, answer questions ..." |
-| 2 | R3 | `what can you do?` | Every feature with examples: add, remove, show, clear, questions, recommend, create a playlist, choose from a list |
+| 1 | R3 | `Hello!` | "Hi! I can add and remove songs in your playlist, answer questions ..." || 2 | R3 | `what can you do?` | Every feature with examples: add, remove, show, clear, questions, recommend, create a playlist, choose from a list |
 | 3 | R3 | `how do I remove a song?` | Only the remove help |
 | 4 | R2 | `add Smells Like Teen Spirit by Nirvana` | Added ...; the panel shows 1 song |
 | 5 | R2 | `put its my life by bon jovi on my list` | Added It's My Life by Bon Jovi (loose name: no apostrophe, lower case) |
 | 6 | R2 | `add Hotel California by the Eagles` | Two versions (the catalog writes "Eagles"): buttons "1. Hotel California - 2013 Remaster — Eagles", "2. ... Live ..." |
 | 7 | R4 | click the first button | "Added to your playlist: Hotel California - 2013 Remaster by Eagles"; 3 songs |
 | 8 | R2 | `add Always by Bon Jovi` | "Sorry, I could not find 'Always' by 'Bon Jovi' in the catalog." (only catalog songs) |
-| 9 | R4 | `add Love` | "I found several songs called 'Love'." 5 options as buttons, most popular first (Keyshia Cole, Musiq Soulchild, ...), songs like the playlist's moved up (same artist, BPR similarity) |
+| 9 | R4 | `add Love` | "I found several songs called 'Love'." 5 options as buttons, most popular first (Keyshia Cole, Musiq Soulchild, ...), songs like the playlist's moved up (same artist, BPR similarity); the list shows each one's album and year |
 | 10 | R4 | `the second one` | Added the 2nd option; 4 songs |
 | 11 | R5 | `who sings Hotel California?` | "Hotel California - 2013 Remaster is performed by Eagles." |
 | 12 | R5 | `when was It's My Life released?` | "... was released in 2000." |
 | 13 | R5 | `what album is Smells Like Teen Spirit on?` | "... is on the album Nevermind (30th Anniversary Edition Super Deluxe)." |
+| 13b | R5 | `what album is Viva La Vida by Coldplay on?` | "In our catalog, ... is on DDB Hitzone Best Of 2008. That looks like a compilation or best-of album, ..." |
 | 14 | R5 | `how long is Bad Medicine?` | "... is 5:16 long." |
 | 15 | R5 | `how many songs does Bon Jovi have?` | "We have 32 tracks by Bon Jovi in the catalog." |
 | 16 | R5 | `what is Nirvana's most popular song?` | "... is Heart-Shaped Box." |
@@ -100,7 +100,8 @@ about 0.3–0.9 s for one LLM call, 1–3 s for R8 (two calls).
 | 17b | R5 | `what genre are the Eagles?` | The most frequent tags, each once, any case ("rock, Pop, Hard Rock, classic rock, country rock") |
 | 18 | R2 | `show me my playlist` | Numbered list of the 4 songs |
 | 19 | R2 | `remove the Bon Jovi song` | Removed It's My Life by Bon Jovi (by artist only); 3 songs |
-| 20 | R6 | `recommend me something` | 5 songs related to the playlist (same artists, similar listeners), none already in it, as buttons |
+| 20 | R6 | `recommend me something` | 5 songs related to the playlist (same artists, similar listeners), none already in it, as buttons; at most 2 per artist when the playlist has several artists |
+| 20b | R6 | `recommend me something like Numb by Linkin Park` | "Songs like Numb by Linkin Park:" 5 songs based on that song instead of the playlist (works with an empty playlist too) |
 | 21 | R7 | `add all except the one by <an artist in the list>` | Adds the other 4 (one extra LLM call) |
 | 22 | R6 | `recommend me something different` | 5 songs by artists not in the playlist |
 | 23 | R7 | `the first two` / `none` / click one button | Adds the first two / nothing / that one |

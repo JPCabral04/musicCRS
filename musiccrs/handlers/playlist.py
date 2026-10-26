@@ -47,7 +47,8 @@ TOPIC_EXPLANATIONS = {
                  "Queen have?'</i>, <i>'what is Nirvana's most popular song?'</i>, "
                  "<i>'which albums does Adele have?'</i>, <i>'what genre is Metallica?'</i>).",
     "recommend": "<b>Get recommendations:</b> type <i>'recommend something'</i> to get 5 songs "
-                 "like the ones in your playlist, or <i>'something different'</i> for other artists.",
+                 "like the ones in your playlist, <i>'something different'</i> for other artists, "
+                 "or <i>'songs like Numb by Linkin Park'</i> for songs like one song or artist.",
     "create_playlist": "<b>Create a playlist:</b> describe it, for example "
                        "<i>'make me a playlist of sad love songs'</i> or <i>'music for the gym'</i>. "
                        "I choose the length from the description.",
@@ -86,11 +87,29 @@ def options_act(tracks):
     return DialogueAct(intent=_INTENT_OPTIONS, annotations=annotations)
 
 
+def describe_version(track):
+    """A track with its album and year, so two versions of one song can be told apart.
+
+    Yellow (Coldplay, album Parachutes, 2000-07-10) -> "Yellow by Coldplay <i>(Parachutes, 2000)</i>"
+    no album and no date                             -> "Yellow by Coldplay"
+    """
+    details = []
+    if track.album != "":
+        details.append(html.escape(track.album, quote=False))
+    if len(track.release_date) >= 4:
+        details.append(track.release_date[:4])
+
+    text = describe_track(track)
+    if len(details) > 0:
+        text = text + " <i>(" + ", ".join(details) + ")</i>"
+    return text
+
+
 def track_list_html(tracks):
-    """Songs as a numbered HTML list, for replies that show options."""
+    """Songs as a numbered HTML list, with album and year, for replies that ask "which one?"."""
     text = "<ol>\n"
     for track in tracks:
-        text = text + "<li>" + describe_track(track) + "</li>\n"
+        text = text + "<li>" + describe_version(track) + "</li>\n"
     return text + "</ol>"
 
 

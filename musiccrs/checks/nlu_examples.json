@@ -50,6 +50,10 @@
    "intent": "RECOMMEND", "slots": {}},
   {"text": "recommend something different, not the same artists", "pending_kind": null,
    "intent": "RECOMMEND", "slots": {"different": true}},
+  {"text": "recommend me something like Bank Account by 21 Savage", "pending_kind": null,
+   "intent": "RECOMMEND", "slots": {"track": "Bank Account", "artist": "21 Savage"}},
+  {"text": "suggest some songs similar to Daft Punk", "pending_kind": null,
+   "intent": "RECOMMEND", "slots": {"artist": "Daft Punk"}},
 
   {"text": "make a playlist of sad love songs", "pending_kind": null,
    "intent": "CREATE_PLAYLIST", "slots": {"description": "sad love songs"}},

@@ -14,9 +14,10 @@ from ..data.db import TrackDB
 from ..data.resolver import resolve, resolve_artist
 from ..handlers.playlist import (NUM_OPTIONS, handle_add, handle_clear, handle_help,
                                  handle_remove, handle_show, rank_options)
-from ..handlers.qa import _format_duration, handle_ask_artist, handle_ask_track
+from ..handlers.qa import (_format_duration, handle_ask_artist, handle_ask_track,
+                           looks_like_compilation)
 from ..handlers.selection import handle_select
-from ..nlu.parser import parse_command
+from ..nlu.parser import parse, parse_command
 from ..state import DialogueState, ParsedIntent, Services
 
 problems = []
@@ -93,6 +94,16 @@ def check_add_and_select(services, state):
     check(len(state.pending_options) == NUM_OPTIONS and state.pending_kind == "disambiguation"
           and option_count == NUM_OPTIONS,
           "add Love -> " + str(NUM_OPTIONS) + " options in an OPTIONS act")
+    first_option = db.get(state.pending_options[0])
+    check("<i>(" + first_option.album in reply.text,
+          "add Love -> the options show their album (" + first_option.album + ")")
+
+    # With options pending, a choice the R7 rules understand is a SELECT without the LLM.
+    parsed = parse("the first one", state, None)
+    check(parsed.name == "SELECT" and parsed.slots == {"selection": "the first one"},
+          "'the first one' with options pending -> SELECT without the LLM")
+    parsed = parse("show my playlist", state, None)
+    check(parsed.name == "UNKNOWN", "'show my playlist' with options pending -> not a SELECT")
 
     second_choice = state.pending_options[1]
     parsed = parse_command("/select 2")
@@ -185,6 +196,14 @@ def check_questions(services, state):
                                                         "artist": "nirvana", "question": "album"}),
                              state, services)
     check(nirvana.album in reply.text, "album of Smells Like Teen Spirit -> " + nirvana.album)
+
+    # The catalog has the studio "Viva La Vida" only on a compilation: the answer says so.
+    reply = handle_ask_track(ParsedIntent("ASK_TRACK", {"track": "viva la vida", "artist": "coldplay",
+                                                        "question": "album"}),
+                             state, services)
+    check("compilation" in reply.text, "album of Viva La Vida -> a compilation, and the answer says so")
+    check(not looks_like_compilation("Parachutes") and not looks_like_compilation("Hitchhiker"),
+          "'Parachutes' and 'Hitchhiker' are not compilations")
 
     life = resolve(db, "its my life", "bon jovi")[0]
     reply = handle_ask_track(ParsedIntent("ASK_TRACK", {"track": "its my life", "artist": "bon jovi",

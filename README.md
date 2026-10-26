@@ -13,9 +13,9 @@ Our MusicCRS manages a playlist and recommends songs in natural language (R1–R
 - **Chat + playlist panel (R1):** the playlist is shown next to the chat; songs can be added, removed and cleared from the panel too.
 - **Playlist in natural language (R2):** "add It's My Life by Bon Jovi", "remove the Queen song", "show my playlist", "clear it". Only catalog songs (47,071), names matched loosely.
 - **Help (R3):** "what can you do?", "how do I remove a song?".
-- **Same-name choices (R4):** "add Love" shows 5 songs as buttons, ranked by popularity and similarity to the playlist.
-- **Questions (R5):** 4 about a song (artist, album, year, length) and 4 about an artist (number of songs, most popular song, albums, genres), answered from the database.
-- **Recommendations (R6):** 5 songs related to the playlist, from our Part 1 retriever.
+- **Same-name choices (R4):** "add Love" shows 5 songs as buttons, with album and year, ranked by popularity and similarity to the playlist.
+- **Questions (R5):** 4 about a song (artist, album, year, length) and 4 about an artist (number of songs, most popular song, albums, genres), answered from the database. An album that looks like a compilation is flagged as one.
+- **Recommendations (R6):** 5 songs related to the playlist, from our Part 1 retriever, at most 2 per artist when the playlist mixes artists; or songs like one named song or artist ("songs like Numb by Linkin Park").
 - **Choosing (R7):** "the first two", "all of them", "none", "all except the one by Bon Jovi", or a click.
 - **Playlist from a description (R8):** "make me a playlist of sad love songs"; the length is chosen from the description.
 
