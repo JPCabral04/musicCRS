@@ -148,6 +148,7 @@ Suggested order (JP's updated Oct 19, after T3 took until Mon): JP **T4 (Mon) â†
 ### Sat Oct 24 â€“ Mon Oct 26
 
 - Rehearse the demo end to end with the script.
+- **Refinements (Oct 26, JP, branch `jp/refine`):** R6 keeps at most 2 songs per artist when the playlist mixes artists, and can recommend songs like one named song or artist; R4 lists show album and year; R5 flags compilation albums.
 - Mock exam: each person explains the **other's** code.
 - ~~Final simulator run with upload~~ (dropped Oct 20: the simulator is not part of the 2026 grade).
 
