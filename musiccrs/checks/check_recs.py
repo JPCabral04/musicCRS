@@ -36,6 +36,14 @@ PLAYLISTS = {
               ("in the end", "linkin park"),
               ("faint", "linkin park"),
               ("bank account", "21 savage")],
+    # Its top 30 candidates were all Linkin Park or Slipknot: still 5 songs must come back.
+    "rock mix": [("love", "keyshia cole"),
+                 ("in the end", "linkin park"),
+                 ("nightmare", "avenged sevenfold"),
+                 ("how you remind me", "nickelback"),
+                 ("american idiot", "green day"),
+                 ("sign of the times", "harry styles"),
+                 ("before i forget", "slipknot")],
     # Only one artist: more songs by that artist are allowed.
     "one artist": [("yellow", "coldplay"),
                    ("viva la vida", "coldplay")],

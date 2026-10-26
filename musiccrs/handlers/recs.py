@@ -20,8 +20,9 @@ from ..state import Reply
 # How many songs R6 shows (the spec asks for 3-5).
 NUM_RECOMMENDATIONS = 5
 
-# How many candidates R6 fetches before the per-artist limit is applied.
-NUM_CANDIDATES = 30
+# How many candidates R6 fetches before the per-artist limit is applied. A playlist of
+# Linkin Park and Slipknot songs had only those two artists in its top 30 (Oct 26).
+NUM_CANDIDATES = 100
 
 # With several artists in the playlist, at most this many recommended songs share one
 # main artist, so one artist with many similar songs does not fill the whole list.
@@ -158,8 +159,13 @@ def limit_per_artist(candidate_ids, max_per_artist, db, limit):
 
     max_per_artist=2: [LP 1, LP 2, LP 3, Future 1, LP 4, Coldplay 1, ...]
                    -> [LP 1, LP 2, Future 1, Coldplay 1, ...]
+
+    If too few artists are among the candidates, the skipped songs fill the list,
+    in their order, so the user still gets `limit` songs:
+    max_per_artist=2, limit=5, only LP and Slipknot -> [LP 1, LP 2, SK 1, SK 2, LP 3]
     """
     kept = []
+    skipped = []
     # Main artist -> how many of their songs are kept so far.
     counts = {}
     for track_id in candidate_ids:
@@ -170,8 +176,16 @@ def limit_per_artist(candidate_ids, max_per_artist, db, limit):
         if counts[key] < max_per_artist:
             kept.append(track_id)
             counts[key] = counts[key] + 1
+        else:
+            skipped.append(track_id)
+        if len(kept) == limit:
+            return kept
+
+    # Not enough artists: fill up with the skipped songs, best first.
+    for track_id in skipped:
         if len(kept) == limit:
             break
+        kept.append(track_id)
     return kept
 
 
