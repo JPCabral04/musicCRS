@@ -8,11 +8,34 @@ No LLM is used for the answer; the parser (one LLM call) only gives the question
 """
 import html
 
+from ..data.db import normalize
 from ..data.resolver import artist_key, resolve, resolve_artist
 from ..state import Reply
 
 # How many albums and tags an answer lists at most.
 MAX_LISTED = 5
+
+# Whole words (after normalize) that mark a compilation or best-of album. The catalog
+# often has a song only on such an album ("Viva La Vida" -> "DDB Hitzone Best Of 2008"),
+# so the album answer says so. 507 of the 17,438 album names match (Oct 26).
+COMPILATION_WORDS = ("best of", "hits", "hitzone", "greatest", "collection", "anthology",
+                     "essential", "essentials", "compilation", "the 70s", "the 80s", "the 90s")
+
+
+def looks_like_compilation(album):
+    """True if the album name has one of COMPILATION_WORDS as whole words.
+
+    "DDB Hitzone Best Of 2008" -> True   ("best of")
+    "Love In The 80's"         -> True   ("love in the 80s" contains "the 80s")
+    "Parachutes"               -> False
+    "Hitchhiker"               -> False  ("hits" must be a whole word)
+    """
+    # Spaces around both sides, so only whole words match.
+    padded_album = " " + normalize(album) + " "
+    for words in COMPILATION_WORDS:
+        if " " + words + " " in padded_album:
+            return True
+    return False
 
 
 def _format_duration(duration_ms):
@@ -67,6 +90,10 @@ def handle_ask_track(parsed, state, services):
         if track.album == "":
             return Reply("I don't know the album of <b>" + name + "</b> by " + main_artist + ".")
         album = html.escape(track.album, quote=False)
+        if looks_like_compilation(track.album):
+            return Reply("In our catalog, <b>" + name + "</b> by " + main_artist
+                         + " is on <b>" + album + "</b>. That looks like a compilation or "
+                         "best-of album, so the song's original album may have another name.")
         return Reply("<b>" + name + "</b> by " + main_artist + " is on the album <b>"
                      + album + "</b>.")
 
