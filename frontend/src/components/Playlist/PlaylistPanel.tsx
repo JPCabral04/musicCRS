@@ -19,6 +19,24 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
   const [playlist, setPlaylist] = useState<PlaylistTrack[]>([]);
   const [inputTrack, setInputTrack] = useState('');
 
+  // Global listener: stops any currently playing audio when a new one starts
+  useEffect(() => {
+    const handleAudioPlay = (event: Event) => {
+      const allAudios = document.querySelectorAll('audio');
+      allAudios.forEach((audio) => {
+        if (audio !== event.target) {
+          audio.pause();
+        }
+      });
+    };
+
+    document.addEventListener('play', handleAudioPlay, true);
+
+    return () => {
+      document.removeEventListener('play', handleAudioPlay, true);
+    };
+  }, []);
+
   // Extract the latest PLAYLIST dialogue act from agent messages
   useEffect(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
