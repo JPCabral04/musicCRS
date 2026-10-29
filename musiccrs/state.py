@@ -16,6 +16,24 @@ class DialogueState:
     # What the pending options are: "disambiguation", "recommendation", or None.
     pending_kind: str = None
 
+    # Part 4 (T1), filled by handlers/shown.py.
+    # The last list of recommended tracks shown, in order. Unlike pending_options it is
+    # kept after "add the first two", so "more like the second one" and "why the second
+    # one?" still know which list they refer to.
+    last_shown: list = field(default_factory=list)
+
+    # Every track ID shown in a recommended list or playlist in this conversation.
+    # Never emptied: a track already shown is never shown again (F1.2).
+    shown: set = field(default_factory=set)
+
+    # Track ID -> why it was shown, a plain dict such as {"source": "recommend", ...}.
+    # "Why this song?" (F3) builds its sentences only from these.
+    signals: dict = field(default_factory=dict)
+
+    # The current critique session (F1): the list the critiques start from, plus what was
+    # liked, disliked and filtered so far. None until a recommended list is shown.
+    critique: dict = None
+
 
 @dataclass
 class ParsedIntent:
@@ -41,3 +59,6 @@ class Services:
     db: object          # TrackDB (T1)
     retriever: object   # FinalRetriever (from T4; None until then)
     llm: object         # openai.OpenAI, or None when the agent runs without an LLM
+    # TrackVectors (Part 4, T1): metadata, audio and lyrics vectors + nearest().
+    # None by default, so the checks that need no vectors can leave it out.
+    vectors: object = None

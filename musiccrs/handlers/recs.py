@@ -15,6 +15,7 @@ from ..data.resolver import resolve, resolve_artist
 from ..llm import ask_json
 from .playlist import describe_track, options_act
 from .selection import clear_pending
+from .shown import remember_tracks, same_signals, show_tracks
 from ..state import Reply
 
 # How many songs R6 shows (the spec asks for 3-5).
@@ -280,9 +281,11 @@ def handle_recommend(parsed, state, services):
     for track_id in track_ids:
         tracks.append(services.db.get(track_id))
 
-    # Remember what was shown, so "add the first two" (R7, T11) knows what it refers to.
-    state.pending_options = track_ids
-    state.pending_kind = "recommendation"
+    # Remember what was shown: for "add the first two" (R7), so it is never shown again
+    # (F1.2), and why it was shown (F3). base_ids is copied: it may be the playlist itself,
+    # which changes later.
+    signals = {"source": "recommend", "base_ids": list(base_ids), "different": different}
+    show_tracks(state, track_ids, same_signals(track_ids, signals))
 
     # What the songs are like: the named song, the named artist, or the playlist.
     if named_seed and "track" in parsed.slots:
@@ -388,6 +391,13 @@ def handle_create_playlist(parsed, state, services):
     state.playlist = track_ids
     # Options shown earlier (R6, R4) do not belong to this playlist any more.
     clear_pending(state)
+    # The last recommended list and its critiques are gone too: "why the second one?"
+    # must not explain a song from a list that is no longer on screen.
+    state.last_shown = []
+    state.critique = None
+    # Shown and why (F1.2, F3), but not as options: the songs are already in the playlist.
+    signals = {"source": "playlist", "description": description, "query": query}
+    remember_tracks(state, track_ids, same_signals(track_ids, signals))
 
     tracks = []
     total_ms = 0

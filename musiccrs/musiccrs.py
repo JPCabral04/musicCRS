@@ -19,10 +19,14 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
+from .data.vectors import TrackVectors
+from .handlers.critique import handle_critique
+from .handlers.explain import handle_explain
 from .handlers.playlist import handle_add, handle_clear, handle_help, handle_remove, handle_show
 from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
+from .handlers.similar import handle_lyrics_search, handle_sounds_like
 from .llm import create_client
 from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
@@ -55,6 +59,11 @@ HANDLERS = {
     "SELECT": handle_select,
     "ASK_TRACK": handle_ask_track,
     "ASK_ARTIST": handle_ask_artist,
+    # Part 4 (stubs in T1).
+    "CRITIQUE": handle_critique,
+    "SOUNDS_LIKE": handle_sounds_like,
+    "LYRICS_SEARCH": handle_lyrics_search,
+    "EXPLAIN": handle_explain,
 }
 
 # Shown when the agent cannot handle a message.
@@ -85,7 +94,20 @@ def create_services(use_llm=True):
     seconds = time.perf_counter() - start
     print("Retriever loaded in " + str(round(seconds, 1)) + " s.")
 
-    return Services(db=db, retriever=retriever, llm=llm)
+    # The Part 4 track vectors. The metadata matrix is the dense scorer's own (no copy);
+    # audio and lyrics are read from cache/embeddings/.
+    print("Loading the track vectors...")
+    start = time.perf_counter()
+    scorers = retriever.fusion.scorers
+    dense = scorers["dense"]
+    vectors = TrackVectors(dense.track_ids, dense.matrix, dense.has_vector)
+    seconds = time.perf_counter() - start
+    print("Track vectors loaded in " + str(round(seconds, 1)) + " s:")
+    print("  " + vectors.size_text("metadata"))
+    print("  " + vectors.size_text("audio"))
+    print("  " + vectors.size_text("lyrics"))
+
+    return Services(db=db, retriever=retriever, llm=llm, vectors=vectors)
 
 
 def playlist_act(state, db):

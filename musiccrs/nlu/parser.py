@@ -4,16 +4,31 @@ from ..llm import ask_json
 from .prompt import PROMPT_TEMPLATE
 from ..state import ParsedIntent
 
-# Every intent the agent knows. Frozen after T3: the handlers are registered under these names.
+# Every intent the agent knows: the handlers are registered under these names.
+# Part 2 (frozen after T3), then the four Part 4 intents (frozen after Part 4 T1).
 INTENTS = ("ADD", "REMOVE", "SHOW", "CLEAR", "HELP", "ASK_TRACK", "ASK_ARTIST",
-           "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "QUIT", "UNKNOWN")
+           "RECOMMEND", "CREATE_PLAYLIST", "SELECT", "GREETING", "QUIT", "UNKNOWN",
+           "CRITIQUE", "SOUNDS_LIKE", "LYRICS_SEARCH", "EXPLAIN")
 
-# Every slot name a ParsedIntent may carry. Frozen after T3.
+# Every slot name a ParsedIntent may carry. Part 2 slots first, then the Part 4 ones.
 # Two of them are set by our code only, never by the LLM:
 #   track_id: from "/remove <id>" (the remove button of the playlist panel);
 #   text:     the user's own message, on UNKNOWN.
+# Part 4 slots:
+#   like, dislike:   CRITIQUE, one shown track as a number or a name ("2", "bon jovi");
+#   attribute:       CRITIQUE, one of CRITIQUE_ATTRIBUTES;
+#   direction:       CRITIQUE, one of CRITIQUE_DIRECTIONS ("older" = year, less);
+#   tag:             CRITIQUE with attribute "tag" ("acoustic");
+#   theme:           LYRICS_SEARCH, what the songs are about ("leaving home");
+#   option:          EXPLAIN, one shown track as a number or a name.
+# SOUNDS_LIKE reuses track and artist.
 SLOT_NAMES = ("track", "artist", "track_id", "question", "description", "selection",
-              "different", "topic", "text")
+              "different", "topic", "text",
+              "like", "dislike", "attribute", "direction", "tag", "theme", "option")
+
+# Allowed values of the CRITIQUE slots "attribute" and "direction" (Part 4, F1.2).
+CRITIQUE_ATTRIBUTES = ("year", "popularity", "tag")
+CRITIQUE_DIRECTIONS = ("more", "less")
 
 # Allowed values of the "question" slot (R5, answered from the DB in T10).
 TRACK_QUESTIONS = ("artist", "album", "release_year", "duration")
@@ -61,6 +76,35 @@ def split_artist_track(text):
     return artist, track
 
 
+def parse_critique_command(rest):
+    """The slots of "/critique <attribute> <direction> [tag]" (Part 4, F1.2).
+
+    "year less"          -> {"attribute": "year", "direction": "less"}
+    "tag more acoustic"  -> {"attribute": "tag", "direction": "more", "tag": "acoustic"}
+    "tag less hard rock" -> {"attribute": "tag", "direction": "less", "tag": "hard rock"}
+    "colour more"        -> {"direction": "more"}  (not an allowed attribute: dropped)
+    """
+    # split(maxsplit=2) cuts at the first two runs of spaces only, so a tag with
+    # spaces stays in one piece: "tag less hard rock" -> ["tag", "less", "hard rock"].
+    parts = rest.split(maxsplit=2)
+
+    raw_slots = {}
+    if len(parts) >= 1:
+        raw_slots["attribute"] = parts[0]
+    if len(parts) >= 2:
+        raw_slots["direction"] = parts[1]
+    if len(parts) >= 3:
+        raw_slots["tag"] = parts[2]
+
+    # The same checks as for the LLM's slots: wrong values are dropped.
+    slots = {}
+    for name in raw_slots:
+        value = clean_slot_value(name, raw_slots[name], "CRITIQUE")
+        if value is not None:
+            slots[name] = value
+    return slots
+
+
 def parse_command(text):
     """Turn a slash command into a ParsedIntent, by rules (no LLM).
 
@@ -72,6 +116,15 @@ def parse_command(text):
     "/remove 0b9aea6c" -> ParsedIntent("REMOVE", {"track_id": "0b9aea6c"})
     "/list"            -> ParsedIntent("SHOW", {})
     "add some nirvana" -> None
+
+    Part 4 commands:
+    "/like 2"             -> ParsedIntent("CRITIQUE", {"like": "2"})
+    "/dislike bon jovi"   -> ParsedIntent("CRITIQUE", {"dislike": "bon jovi"})
+    "/critique year less" -> ParsedIntent("CRITIQUE", {"attribute": "year", "direction": "less"})
+    "/sounds nirvana: in bloom"
+                          -> ParsedIntent("SOUNDS_LIKE", {"artist": "nirvana", "track": "in bloom"})
+    "/about leaving home" -> ParsedIntent("LYRICS_SEARCH", {"theme": "leaving home"})
+    "/why 2"              -> ParsedIntent("EXPLAIN", {"option": "2"})
     """
     text = text.strip()
     if not text.startswith("/"):
@@ -117,6 +170,43 @@ def parse_command(text):
             slots["selection"] = rest
         return ParsedIntent("SELECT", slots)
 
+    # Part 4. /like <n or name> and /dislike <n or name>: example critiques (F1.1).
+    if command == "/like" or command == "/dislike":
+        slots = {}
+        if rest != "":
+            slot_name = command[1:]          # "/like" -> "like"
+            slots[slot_name] = rest
+        return ParsedIntent("CRITIQUE", slots)
+
+    # /critique <attribute> <direction> [tag]: attribute critiques (F1.2).
+    if command == "/critique":
+        slots = parse_critique_command(rest)
+        return ParsedIntent("CRITIQUE", slots)
+
+    # /sounds [artist]: [track]: songs that sound like a track (F2.1).
+    if command == "/sounds":
+        slots = {}
+        if rest != "":
+            artist, track = split_artist_track(rest)
+            slots["track"] = track
+            if artist is not None:
+                slots["artist"] = artist
+        return ParsedIntent("SOUNDS_LIKE", slots)
+
+    # /about <theme>: songs whose lyrics are about a theme (F2.2).
+    if command == "/about":
+        slots = {}
+        if rest != "":
+            slots["theme"] = rest
+        return ParsedIntent("LYRICS_SEARCH", slots)
+
+    # /why <n or name>: why a shown track was recommended (F3).
+    if command == "/why":
+        slots = {}
+        if rest != "":
+            slots["option"] = rest
+        return ParsedIntent("EXPLAIN", slots)
+
     # Commands without an argument: /list, /clear, /recommend, /help, /quit
     if command in SIMPLE_COMMANDS:
         intent_name = SIMPLE_COMMANDS[command]
@@ -158,6 +248,9 @@ def clean_slot_value(name, value, intent_name):
     ("question", "album", "ASK_ARTIST")      -> None     (album is a track question)
     ("topic", "remove", "HELP")              -> "remove"
     ("track", "", "ADD")                     -> None
+    ("like", 2, "CRITIQUE")                  -> "2"
+    ("attribute", "Year", "CRITIQUE")        -> "year"
+    ("direction", "older", "CRITIQUE")       -> None     (must be "more" or "less")
     """
     # "different" is a yes/no slot: keep it only when it is true.
     if name == "different":
@@ -187,6 +280,16 @@ def clean_slot_value(name, value, intent_name):
         return None
     if name == "topic":
         if value in HELP_TOPICS:
+            return value
+        return None
+    if name == "attribute":
+        value = value.lower()
+        if value in CRITIQUE_ATTRIBUTES:
+            return value
+        return None
+    if name == "direction":
+        value = value.lower()
+        if value in CRITIQUE_DIRECTIONS:
             return value
         return None
 

@@ -20,11 +20,12 @@ EXAMPLES_PATH = "musiccrs/checks/nlu_examples.json"
 PASS_RATE_NEEDED = 0.9
 
 # How a slot value is compared with the expected one:
-# names ignore case, punctuation and accents ("It's My Life" = "its my life");
-# the user's own words (a description, a selection) only have to be there;
-# every other slot (question, topic, different) must be exactly equal.
-NORMALIZED_SLOTS = ("track", "artist")
-FREE_TEXT_SLOTS = ("description", "selection")
+# names ignore case, punctuation and accents ("It's My Life" = "its my life"), and so do
+# the Part 4 references to a shown song ("Coldplay" = "coldplay", "2" = "2");
+# the user's own words (a description, a selection, a tag, a theme) only have to be there;
+# every other slot (question, topic, different, attribute, direction) must be exactly equal.
+NORMALIZED_SLOTS = ("track", "artist", "like", "dislike", "option")
+FREE_TEXT_SLOTS = ("description", "selection", "tag", "theme")
 
 
 def make_state(pending_kind):
