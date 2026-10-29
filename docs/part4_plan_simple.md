@@ -110,7 +110,7 @@ Each task: **what** → **file** → **done when**. One week, so each task gets 
 → `musiccrs/checks/eval_critique.py`, `musiccrs/llm.py`, `musiccrs/checks/check_latency.py` → done when both scripts print their tables, and the numbers go into the README.
 - **Alejandro — T10. F5b audio evaluation.** 1,000 random seed tracks: tags shared with the seed by the top-5 audio neighbours, vs 5 random tracks, vs the top-5 text-embedding neighbours.
 → `musiccrs/checks/eval_audio.py` → done when it prints the 3 numbers.
-- **Alejandro — T11.** Demo script (one line per rubric item) + "Part 4" README section. → `docs/part4_demo.md`.
+- **Alejandro — T11.** Finish the demo script (`docs/part4_demo.md` grows after every task, by whoever finished it; T11 checks it end to end and orders it by rubric item) + "Part 4" README section.
 
 ### Tue Nov 3 — go / no-go
 
