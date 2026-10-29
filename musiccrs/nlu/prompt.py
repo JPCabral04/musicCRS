@@ -61,7 +61,7 @@ Use SELECT only when options are pending. With no pending options, "the first on
 CRITIQUE and EXPLAIN are about songs recommended earlier: classify them by the words, whether or not options are pending.
 
 Boundaries between similar intents:
-- "the second one" alone is SELECT; "more like the second one" or "less like the second one" is CRITIQUE; "why the second one?" is EXPLAIN.
+- "more like the second one" or "less like the second one" is CRITIQUE; "why the second one?" is EXPLAIN; "the second one" alone follows the SELECT rule above (SELECT only when options are pending).
 - "songs like X" or "something like X" is RECOMMEND. Only when the user talks about the sound ("sounds like X", "a similar sound to X", "the same vibe and sound as X") is it SOUNDS_LIKE.
 - "songs about X", or songs whose lyrics talk about X, is LYRICS_SEARCH. A playlist for a mood, an activity or an occasion ("sad songs", "music for the gym") is CREATE_PLAYLIST. The lyrics of one named song are UNKNOWN.
 
