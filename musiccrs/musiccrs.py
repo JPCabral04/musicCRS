@@ -20,10 +20,13 @@ from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
 from .data.vectors import TrackVectors
+from .handlers.critique import handle_critique
+from .handlers.explain import handle_explain
 from .handlers.playlist import handle_add, handle_clear, handle_help, handle_remove, handle_show
 from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
+from .handlers.similar import handle_lyrics_search, handle_sounds_like
 from .llm import create_client
 from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
@@ -56,6 +59,11 @@ HANDLERS = {
     "SELECT": handle_select,
     "ASK_TRACK": handle_ask_track,
     "ASK_ARTIST": handle_ask_artist,
+    # Part 4 (stubs in T1).
+    "CRITIQUE": handle_critique,
+    "SOUNDS_LIKE": handle_sounds_like,
+    "LYRICS_SEARCH": handle_lyrics_search,
+    "EXPLAIN": handle_explain,
 }
 
 # Shown when the agent cannot handle a message.
