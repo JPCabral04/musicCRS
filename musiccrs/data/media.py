@@ -5,40 +5,43 @@ from dialoguekit.core.dialogue_act import DialogueAct
 from dialoguekit.core.intent import Intent
 from dialoguekit.core.annotation import Annotation
 
-# In-memory cache to store resolved track media: track_id -> {"cover": str|None, "preview": str|None}
+# In-memory cache to store resolved track media: track_key -> {"cover": str|None, "preview": str|None}
 _MEDIA_CACHE = {}
 
 
-def get_media(track, catalog=None):
+def get_media(track, artist_or_catalog=None):
     """Retrieves cover image and 30-second audio preview URL for a track using Deezer API.
 
-    Args:
-        track: Track object or dict containing track metadata.
-        catalog: Optional catalog reference to extract ISRC.
-
-    Returns:
-        dict: {"cover": str or None, "preview": str or None}
+    Supports calling either:
+      - get_media(track_obj)
+      - get_media("Song Title", "Artist Name")
     """
     if track is None:
         return {"cover": None, "preview": None}
 
-    # Extract track_id safely
-    track_id = getattr(track, "track_id", None) or (track.get("id") or track.get("track_id") if isinstance(track, dict) else None)
-    
+    # Handle string inputs: get_media("Rockabye", "Clean Bandit")
+    if isinstance(track, str):
+        track_name = track
+        artist_name = artist_or_catalog if isinstance(artist_or_catalog, str) else ""
+        track_id = f"{track_name.lower()}_{artist_name.lower()}"
+        catalog = None
+    else:
+        # Handle Track object or dict
+        catalog = artist_or_catalog if not isinstance(artist_or_catalog, str) else None
+        track_id = getattr(track, "track_id", None) or (track.get("id") or track.get("track_id") if isinstance(track, dict) else None)
+        
+        if isinstance(track, dict):
+            track_name = track.get("name", "")
+            artists = track.get("artists", [])
+        else:
+            track_name = getattr(track, "name", "")
+            artists = getattr(track, "artists", [])
+        artist_name = artists[0] if (artists and len(artists) > 0) else ""
+
     if track_id and track_id in _MEDIA_CACHE:
         return _MEDIA_CACHE[track_id]
 
     media = {"cover": None, "preview": None}
-
-    # Extract track attributes
-    if isinstance(track, dict):
-        track_name = track.get("name", "")
-        artists = track.get("artists", [])
-    else:
-        track_name = getattr(track, "name", "")
-        artists = getattr(track, "artists", [])
-
-    artist_name = artists[0] if (artists and len(artists) > 0) else ""
 
     # 1. Try ISRC lookup if available in catalog
     isrc = None
@@ -60,10 +63,8 @@ def get_media(track, catalog=None):
 
     # 2. Fallback: Search Deezer with clean search terms
     if not media["preview"] and track_name:
-        # Clean title (remove '- Remastered', '(Live)', etc.)
         clean_title = track_name.split(" - ")[0].split(" (")[0].strip()
         
-        # Build search queries from specific to general
         queries = []
         if artist_name:
             queries.append(f"{artist_name} {clean_title}")
@@ -83,7 +84,7 @@ def get_media(track, catalog=None):
                         media["cover"] = media["cover"] or first_hit.get("album", {}).get("cover_medium")
                         media["preview"] = first_hit.get("preview")
                         if media["preview"]:
-                            break  # Stop search once a valid preview is found
+                            break
             except Exception:
                 pass
 
