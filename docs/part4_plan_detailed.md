@@ -48,17 +48,23 @@ From `talkpl-ai/TalkPlayData-Challenge-Track-Embeddings`, split `all_tracks` (Pa
 
 ## 3. Shared interfaces (owner JP, T1, frozen after T1)
 
+**Built in T1 (Oct 29, branch `jp/p4-base`).** The interfaces below are the code as merged. Three changes from the first proposal, agreed by JP:
+1. `TrackVectors(track_ids, metadata_matrix, metadata_has_vector)` instead of `TrackVectors(dense_scorer)`, so a check can build it without loading the Qwen encoder.
+2. New `state.last_shown`: `handle_select` empties `pending_options` after "add the first two", so `pick_shown` reads `last_shown` (kept after a selection) instead.
+3. R8 does not call `show_tracks` (its songs go straight into the playlist; options would point at songs already there). It calls `remember_tracks` (shown + signals only) and forgets the old list (`last_shown = []`, `critique = None`).
+
 New and changed files:
 
 ```
 musiccrs/
-  state.py              + shown, signals, critique fields on DialogueState; + vectors on Services
+  state.py              + last_shown, shown, signals, critique on DialogueState; + vectors on Services
   data/vectors.py       TrackVectors: the three matrices + nearest()          (T1, JP)
   data/media.py         cover + preview lookup, MEDIA act                     (T2, Ale)
-  handlers/shown.py     show_tracks(), pick_shown()                           (T1, JP)
+  handlers/shown.py     show_tracks(), remember_tracks(), same_signals(), pick_shown()  (T1, JP)
   handlers/critique.py  CRITIQUE                                              (T3, T5, JP)
   handlers/explain.py   EXPLAIN                                               (T7, JP)
   handlers/similar.py   SOUNDS_LIKE, LYRICS_SEARCH                            (T6, T8, Ale)
+  checks/check_base.py  71 checks of the T1 base, no LLM, no retriever        (T1, JP)
   checks/check_critique.py, eval_critique.py                                  (JP)
   checks/check_similar.py, check_lyrics.py, eval_audio.py                     (Ale)
 ```
@@ -71,6 +77,10 @@ class DialogueState:
     playlist: list = ...           # unchanged
     pending_options: list = ...    # unchanged: the last list shown (for R7)
     pending_kind: str = None       # unchanged; new lists also use "recommendation"
+
+    # The last recommended list shown, in order. Kept after "add the first two"
+    # (unlike pending_options), so "more like the second one" / "why the second one?" work.
+    last_shown: list = field(default_factory=list)
 
     # Every track ID shown in this conversation, in any list. F1.2: never shown twice.
     shown: set = field(default_factory=set)
@@ -85,7 +95,7 @@ class DialogueState:
 @dataclass
 class Services:
     db, retriever, llm             # unchanged
-    vectors: object                # TrackVectors (T1)
+    vectors: object = None         # TrackVectors (T1); None in checks that need no vectors
 ```
 
 ### 3.2 Vectors (`musiccrs/data/vectors.py`)
@@ -100,7 +110,10 @@ class TrackVectors:
     "audio"    -> audio-laion_clap (512)
     "lyrics"   -> lyrics-qwen3_embedding_0.6b (1024); rows without real lyrics masked out (T8)
     """
-    def __init__(self, dense_scorer): ...
+    def __init__(self, track_ids, metadata_matrix, metadata_has_vector): ...
+        # self.matrices[space], self.usable[space] (one bool per row), self.row_of[track_id]
+    def size_text(self, space):
+        """"audio: 47071 x 512, 46579 tracks with a vector" (printed at startup)."""
     def vector(self, space, track_id):
         """The vector of one track, or None if it has none. space = "metadata" | "audio" | "lyrics"."""
     def nearest(self, space, query_vector, k, exclude_ids):
@@ -108,52 +121,62 @@ class TrackVectors:
         skipping exclude_ids and rows without a vector. Returns [(track_id, score), ...]."""
 ```
 
-- `nearest` is one `matrix @ query_vector` (≈ 20–50 ms on CPU for 47k × 1024), then `numpy.argsort` on the scores, then a plain `for` loop that skips excluded IDs until `k` are kept.
-- `__init__` uses `load_track_matrix("audio-laion_clap", track_ids)` and `load_track_matrix("lyrics-qwen3_embedding_0.6b", track_ids)`, and the dense scorer's `.matrix` for metadata.
-- **Alejandro before T1 is merged:** he can call `load_track_matrix` directly in his scratch code; the switch to `services.vectors` is one line.
+- `nearest` is one `matrix @ query_vector`, then `numpy.argsort(-scores)`, then a plain `for` loop that skips unusable rows and excluded IDs until `k` are kept. Measured: ≈ 7 ms for the 47k × 1024 lyrics matrix (Oct 29).
+- `__init__` uses `load_track_matrix("audio-laion_clap", track_ids)` and `load_track_matrix("lyrics-qwen3_embedding_0.6b", track_ids)`; `create_services` passes the dense scorer's `track_ids`, `.matrix`, `.has_vector` (same object, no copy). Loading takes 0.4 s once the `.npy` files are in `cache/embeddings/` (the first run downloads them).
+- All three spaces have 46,579 usable rows (the same 492 tracks have no vector). **T8:** replace `self.usable["lyrics"]` with the `lyrics_ok` mask from `check_lyrics.py`.
+- `python -m musiccrs.data.vectors` prints the sizes and the 5 audio neighbours of Smells Like Teen Spirit.
 
 ### 3.3 Shown tracks and signals (`musiccrs/handlers/shown.py`)
 
 ```python
-def show_tracks(state, track_ids, signals_by_id, new_list=True):
-    """Remember a list that is about to be shown.
+def same_signals(track_ids, signals):
+    """{track_id: a copy of signals} for every track of a list (one dict copy each)."""
 
-    Sets pending_options (so R7 "add the first two" works), pending_kind = "recommendation",
-    adds the IDs to state.shown, and stores each track's signals in state.signals.
-    new_list=True (R6, R8, sounds like, lyrics) also starts a new critique session:
+def remember_tracks(state, track_ids, signals_by_id):
+    """Add the IDs to state.shown and store each track's signals in state.signals.
+    Used alone by R8 (no options to pick from)."""
+
+def show_tracks(state, track_ids, signals_by_id, new_list=True):
+    """Remember a list of recommended tracks that is about to be shown.
+
+    remember_tracks, then pending_options (so R7 "add the first two" works),
+    pending_kind = "recommendation", and last_shown.
+    new_list=True (R6, sounds like, lyrics) also starts a new critique session:
     state.critique = {"base_ids": track_ids, "liked": [], "disliked": [], "filters": []}.
     The critique handler passes new_list=False, so its likes and filters are kept."""
 
 def pick_shown(value, state, db):
-    """One of the pending options from a number or a loose name.
-    2 -> pending_options[1]; "the one by bon jovi" / "numb" -> the option whose normalized
-    artist or title contains the text. None if nothing matches."""
+    """The track ID of one track of last_shown, from a number or a loose name.
+    "2" -> last_shown[1]; "bon jovi" / "numb" -> the first track whose normalized
+    title or artist contains the text. None if out of range, no match, or empty text."""
 ```
 
 Signals per source (a plain dict, JSON-like, so F3 can read it without knowing who made it):
 
 | Source | Example |
 | --- | --- |
-| R6 recommend (JP, T7 adds `retrievers`) | `{"source": "recommend", "base_ids": [...], "retrievers": {"bm25_plus": 3, "dense": 12}}` |
-| R8 playlist (JP) | `{"source": "playlist", "description": "sad love songs"}` |
+| R6 recommend (JP, T7 adds `retrievers`) | `{"source": "recommend", "base_ids": [...], "different": False, "retrievers": {"bm25_plus": 3, "dense": 12}}` |
+| R8 playlist (JP) | `{"source": "playlist", "description": "sad love songs", "query": "<the LLM's search words>"}` |
 | Critique (JP, T3/T5) | `{"source": "critique", "liked": ["id2"], "disliked": [], "filters": ["older than 1998"], "similarity": 0.82}` |
 | Sounds like (Ale, T6) | `{"source": "audio", "seed_id": "...", "similarity": 0.91}` |
 | Lyrics (Ale, T8) | `{"source": "lyrics", "theme": "leaving home", "similarity": 0.58}` |
 
-R6 and R8 start calling `show_tracks` in T1 (one line each in `recs.py`), so every list in the system feeds F1.2 and F3 from day 1.
+Since T1, R6 calls `show_tracks` and R8 calls `remember_tracks` (in `recs.py`), so every list in the system feeds F1.2 and F3 from day 1.
 
 ### 3.4 Intents, slots and slash commands (`musiccrs/nlu/`)
 
 | Intent | Slots | Example sentence → slots | Slash command (no LLM) |
 | --- | --- | --- | --- |
-| `CRITIQUE` | `like`, `dislike` (a number or a name), `attribute` (`year` / `popularity` / `tag`), `direction` (`more` / `less`), `tag` | "more like the second one" → `{like: 2}`; "less like the one by Bon Jovi" → `{dislike: "bon jovi"}`; "older" → `{attribute: year, direction: less}`; "more acoustic" → `{attribute: tag, direction: more, tag: acoustic}`; "like #2 but newer" → both | `/like 2`, `/dislike 3`, `/critique year less`, `/critique tag more acoustic` |
+| `CRITIQUE` | `like`, `dislike` (a number or a name), `attribute` (`year` / `popularity` / `tag`), `direction` (`more` / `less`), `tag` | "more like the second one" → `{like: "2"}`; "less like the one by Bon Jovi" → `{dislike: "bon jovi"}`; "older" → `{attribute: year, direction: less}`; "more acoustic" → `{attribute: tag, direction: more, tag: acoustic}`; "like #2 but newer" → both | `/like 2`, `/dislike 3`, `/critique year less`, `/critique tag more acoustic` |
 | `SOUNDS_LIKE` | `track`, `artist` | "songs that sound like Numb by Linkin Park" | `/sounds linkin park: numb` |
 | `LYRICS_SEARCH` | `theme` | "songs about leaving home" → `{theme: "leaving home"}` | `/about leaving home` |
 | `EXPLAIN` | `option` (a number or a name) | "why the second one?", "why did you pick Numb?" | `/why 2` |
 
 - Still **one** LLM call for the parser (plus its one retry). The new features add no LLM call: the parser already returns structured slots. That is how "an LLM structures the critique" (proposal F1) is met.
-- **Boundary with Part 2 intents** (the prompt must say it, and `nlu_examples.json` must test it): "songs like Numb" stays `RECOMMEND` (Part 2, text + CF retrieval); "songs that *sound* like Numb" is `SOUNDS_LIKE`. "Recommend sad songs" with no list on screen stays `RECOMMEND`/`CREATE_PLAYLIST`; "songs *about* leaving home" is `LYRICS_SEARCH`. `CRITIQUE` and `EXPLAIN` only make sense when a list is pending; with none, the handler says so.
-- T1 ends when `python -m musiccrs.checks.check_nlu` passes with ≥ 2 sentences per new intent (≥ 8 new) and the old 37 still pass.
+- **Boundary with Part 2 intents** (the prompt must say it, and `nlu_examples.json` must test it): "songs like Numb" stays `RECOMMEND` (Part 2, text + CF retrieval); "songs that *sound* like Numb" is `SOUNDS_LIKE`. "Recommend sad songs" with no list on screen stays `RECOMMEND`/`CREATE_PLAYLIST`; "songs *about* leaving home" is `LYRICS_SEARCH`. The prompt classifies `CRITIQUE` and `EXPLAIN` by the words, whether or not options are pending (after a selection only `last_shown` is left); the handler checks `last_shown` and says so when there is no list.
+- Slot values: numbers come as digits (`"2"`, read by `pick_shown`); `attribute` and `direction` only take the allowed values (`CRITIQUE_ATTRIBUTES`, `CRITIQUE_DIRECTIONS` in `parser.py`, checked after `.lower()`); `tag` and `theme` are free text. `/critique` uses `split(maxsplit=2)`, so a tag can have spaces ("hard rock").
+- T1 stubs (`handlers/critique.py`, `explain.py`, `similar.py`) reply "… is not built yet. I understood: {slots}"; each task replaces its stub's body.
+- **Done (Oct 29):** `check_nlu` 53/53 (39 old + 14 new: 6 CRITIQUE, 2 SOUNDS_LIKE, 2 LYRICS_SEARCH, 2 EXPLAIN, 2 boundary), mean 469 ms per parse; `check_base` 71/71; `check_handlers` and `check_recs` still pass.
 
 ---
 
