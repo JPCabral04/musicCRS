@@ -41,3 +41,6 @@ class Services:
     db: object          # TrackDB (T1)
     retriever: object   # FinalRetriever (from T4; None until then)
     llm: object         # openai.OpenAI, or None when the agent runs without an LLM
+    # TrackVectors (Part 4, T1): metadata, audio and lyrics vectors + nearest().
+    # None by default, so the checks that need no vectors can leave it out.
+    vectors: object = None
