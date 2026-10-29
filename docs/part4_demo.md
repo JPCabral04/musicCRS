@@ -53,6 +53,16 @@ understood: {...}", which shows the slots the parser found.
 "Songs like Numb" is still a Part 2 recommendation (R6); only "songs that *sound* like Numb"
 uses the audio vectors.
 
+Expected replies until the features are built (the slots are what the parser understood):
+
+| Type | Expected reply |
+| --- | --- |
+| `/like 2` | Critiques are not built yet. I understood: {'like': '2'} |
+| `/critique tag more acoustic` | Critiques are not built yet. I understood: {'attribute': 'tag', 'direction': 'more', 'tag': 'acoustic'} |
+| `/sounds nirvana: smells like teen spirit` | 'Sounds like' is not built yet. I understood: {'track': 'smells like teen spirit', 'artist': 'nirvana'} |
+| `/about leaving home` | Lyrics search is not built yet. I understood: {'theme': 'leaving home'} |
+| "why did you pick the third one?" (with the key) | Explanations are not built yet. I understood: {'option': '3'} |
+
 ---
 
 ## 3. Command-line checks
@@ -60,5 +70,19 @@ uses the audio vectors.
 ```bash
 python -m musiccrs.data.vectors          # T1: matrix sizes + 5 audio neighbours of Smells Like Teen Spirit (~15 s)
 python -m musiccrs.checks.check_base     # T1: 71 checks of slash commands, shown tracks, pick_shown, nearest (no key, ~12 s)
-python -m musiccrs.checks.check_nlu      # T1: 53/53 sentences, 14 of them Part 4 (needs the key)
+python -m musiccrs.checks.check_nlu      # T1: 53 sentences, 14 of them Part 4 (needs the key)
 ```
+
+Expected output (Oct 29):
+
+- `musiccrs.data.vectors`: the three size lines above, then
+  ```
+  Sounds closest to Smells Like Teen Spirit by Nirvana:
+    0.932  I Stand Alone by Godsmack
+    0.922  Stay Away by Nirvana
+    0.915  One Weak by Deftones
+    0.914  In Bloom - Nevermind Version by Nirvana
+    0.913  Another Brick in the Wall, Pt. 1, 2, 3 by Korn
+  ```
+- `check_base`: every line `ok`, last line `OK: every check passed.`
+- `check_nlu`: `Passed 53/53 (100.0%); T3 needs 90%`, about 470 ms per parse.
