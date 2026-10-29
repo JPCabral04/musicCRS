@@ -79,6 +79,7 @@ Each task: **what** → **file** → **done when**. One week, so each task gets 
 - **Both:** check on Canvas that the revised proposal (Oct 16) was resubmitted and approved. Book the Nov 4 slot.
 - **JP — T1. Base.** New intents `CRITIQUE`, `SOUNDS_LIKE`, `LYRICS_SEARCH`, `EXPLAIN` in the parser (LLM prompt + slash commands), stub handlers, `show_tracks()` + the "shown" set + why-signals in the state, and the track vectors (metadata, audio, lyrics) loaded once with a shared `nearest()` function.
 → `musiccrs/nlu/`, `musiccrs/state.py`, `musiccrs/data/vectors.py`, `musiccrs/handlers/shown.py` → done when every new slash command reaches its stub, `check_nlu` still passes with ≥ 2 new sentences per new intent, and startup prints the three matrix sizes. **PR merged by Thu Oct 29 evening: after T1 the interfaces are frozen.**
+**Done Oct 29** (branch `jp/p4-base`): `check_nlu` 53/53, `check_base` 71/71. Final interfaces, and the three small changes from the first proposal, in `part4_plan_detailed.md` §3.
 - **Alejandro — T2. Media lookup.** For a track, ask Deezer for its cover and 30 s preview (by ISRC, else by artist + title), cache the answer in memory, and add a `MEDIA` act to every reply that shows tracks.
 → `musiccrs/data/media.py`, two small call sites in `musiccrs/musiccrs.py` → done when `python -m musiccrs.data.media` prints a cover and a preview URL for Smells Like Teen Spirit, Hotel California and It's My Life.
 
@@ -131,7 +132,7 @@ Every feature is worth points, so we keep all of them and make each one smaller,
 
 ## 5. How we work together
 
-- Each person edits **only their own files**. After T1, `state.py`, `nlu/`, `data/vectors.py` and `handlers/shown.py` change only if both agree.
+- Each person edits **only their own files**. After T1, `state.py`, `nlu/`, `data/vectors.py` and `handlers/shown.py` change only if both agree. Run `python -m musiccrs.checks.check_base` after touching any of them.
 - Alejandro's two call sites in `musiccrs.py` (T2) are the one exception, reviewed by JP.
 - One branch per task (`jp/p4-base`, `jp/critique`, `jp/explain`, `jp/p4-eval`, `ale/media`, `ale/media-ui`, `ale/sounds-like`, `ale/lyrics`, `ale/p4-eval`) → pull request → the other runs it → merge into `main`.
 

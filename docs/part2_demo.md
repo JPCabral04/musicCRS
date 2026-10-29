@@ -135,7 +135,7 @@ Notes for the demo:
 
 ```bash
 python -m musiccrs.checks.check_handlers   # T6-T8, T10, T12: resolver, add/remove/show/clear, R4, help, 8 questions (no key, ~1 s)
-python -m musiccrs.checks.check_nlu        # T3: 37/37 sentences, ms per parse (needs the key)
+python -m musiccrs.checks.check_nlu        # T3: 53/53 sentences (39 Part 2 + 14 Part 4), ms per parse (needs the key)
 python -m musiccrs.checks.check_recs       # T4: rock / jazz / pop playlists, 5 new songs each (~50 s load)
 python -m musiccrs.checks.check_select     # T11: 16 rule cases; 6 LLM cases with the key
 python -m musiccrs.checks.check_playlist   # T9: length rule + 4 descriptions (~50 s load; lengths differ only with the key)
