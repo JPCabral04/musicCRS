@@ -6,6 +6,8 @@ export interface PlaylistTrack {
   name: string;
   artist: string;
   duration_ms: number;
+  cover?: string | null;
+  preview?: string | null;
 }
 
 interface PlaylistPanelProps {
@@ -22,7 +24,6 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       
-      // Extraemos los dialogue_acts de cualquier nivel donde DialogueKit los sitúe
       const acts = msg.dialogue_acts || msg.message?.dialogue_acts || msg.dialogue_act;
 
       if (acts && Array.isArray(acts)) {
@@ -53,6 +54,8 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
                       name: trackData.name,
                       artist: trackData.artist || 'Unknown',
                       duration_ms: trackData.duration_ms || 0,
+                      cover: trackData.cover || null,
+                      preview: trackData.preview || null,
                     });
                   }
                 } catch (e) {
@@ -62,7 +65,7 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
             });
           }
           setPlaylist(tracks);
-          break; // Detenerse al encontrar la lista más reciente
+          break; // Stop at most recent playlist act
         }
       }
     }
@@ -115,18 +118,42 @@ export const PlaylistPanel: React.FC<PlaylistPanelProps> = ({ messages, onSendMe
         ) : (
           <ol className="track-list">
             {playlist.map((track) => (
-              <li key={track.id} className="track-item">
-                <div className="track-info">
-                  <span className="track-name">{track.name}</span>
-                  <span className="track-artist">{track.artist}</span>
+              <li key={track.id} className="track-item flex-column align-items-start">
+                <div className="d-flex align-items-center w-100 justify-content-between">
+                  <div className="d-flex align-items-center" style={{ gap: '8px' }}>
+                    {track.cover ? (
+                      <img
+                        src={track.cover}
+                        alt={track.name}
+                        style={{ width: '36px', height: '36px', borderRadius: '4px', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <div
+                        className="d-flex align-items-center justify-content-center bg-secondary text-white"
+                        style={{ width: '36px', height: '36px', borderRadius: '4px', fontSize: '10px' }}
+                      >
+                        🎵
+                      </div>
+                    )}
+                    <div className="track-info">
+                      <span className="track-name">{track.name}</span>
+                      <span className="track-artist">{track.artist}</span>
+                    </div>
+                  </div>
+                  <button
+                    className="remove-btn"
+                    onClick={() => handleRemove(track.id)}
+                    title="Remove track"
+                  >
+                    &times;
+                  </button>
                 </div>
-                <button
-                  className="remove-btn"
-                  onClick={() => handleRemove(track.id)}
-                  title="Remove track"
-                >
-                  &times;
-                </button>
+
+                {track.preview && (
+                  <audio controls preload="none" className="mt-1 w-100" style={{ height: '24px' }}>
+                    <source src={track.preview} type="audio/mpeg" />
+                  </audio>
+                )}
               </li>
             ))}
           </ol>
