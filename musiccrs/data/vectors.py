@@ -25,6 +25,38 @@ from .resolver import resolve
 AUDIO_FIELD = "audio-laion_clap"
 LYRICS_FIELD = "lyrics-qwen3_embedding_0.6b"
 
+# A lyrics vector shared by more than this many tracks is a placeholder, not real lyrics
+# (instrumentals and tracks with missing lyrics all got the same embedding).
+MAX_COPIES = 10
+
+
+def lyrics_ok_mask(matrix, has_vector):
+    """True for each row with a real lyrics vector: it has one, and it is not a placeholder.
+
+    Rows are rounded to 3 decimals, so near-identical placeholders count as the same.
+    Row of an instrumental, shared by 300 tracks  -> False
+    Row of "Smells Like Teen Spirit" (unique)     -> True
+    """
+    rounded = np.round(matrix, decimals=3)
+
+    # 1. Count how many rows have each exact vector (its bytes are the dict key).
+    keys = []
+    copies = {}
+    for row in rounded:
+        key = row.tobytes()
+        keys.append(key)
+        if key in copies:
+            copies[key] = copies[key] + 1
+        else:
+            copies[key] = 1
+
+    # 2. A row is usable when it has a vector that few other rows share.
+    ok = np.zeros(len(keys), dtype=bool)
+    for index in range(len(keys)):
+        if has_vector[index] and copies[keys[index]] <= MAX_COPIES:
+            ok[index] = True
+    return ok
+
 
 class TrackVectors:
     """The three matrices, plus which rows may be returned by a search."""
@@ -54,11 +86,11 @@ class TrackVectors:
 
         # Space -> one True/False per row: True when the row may be returned.
         # A track without a vector has a zero row: it would score 0 against everything.
-        # T8 replaces the lyrics mask with one that also leaves out meaningless lyrics rows.
+        # Lyrics also leave out placeholder rows (T8), or a theme search returns instrumentals.
         self.usable = {
             "metadata": metadata_has_vector,
             "audio": audio_has_vector,
-            "lyrics": lyrics_has_vector,
+            "lyrics": lyrics_ok_mask(lyrics_matrix, lyrics_has_vector),
         }
 
     def size_text(self, space):
