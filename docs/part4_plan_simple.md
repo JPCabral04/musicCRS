@@ -95,6 +95,7 @@ Each task: **what** → **file** → **done when**. One week, so each task gets 
 
 - **JP — T5. F1.2 attribute critiques.** "Older", "newer", "more / less popular", "more X" / "no X" (a tag). Each critique becomes a filter with a threshold taken from the list on screen; filters add up until a new list starts; shown tracks never come back.
 → `musiccrs/handlers/critique.py` → done when "older" then "more popular" gives tracks that are older *and* more popular than the first list, with no repeats.
+**Done Oct 30** (branch `jp/attr-critique`): `check_critique` 104/104, 12 ms per critique. Each limit is the median of the list on screen when the critique is said; a filter nothing passes is undone, see `part4_plan_detailed.md` §4.2.
 - **Alejandro — T6. F2.1 sounds like.** Find the named track (Part 2 resolver), take its audio (CLAP) vector, show the 5 nearest tracks (not the same song by the same artist). Also run the lyrics count of T8 step 1 (`check_lyrics`), so Sunday starts with the answer.
 → `musiccrs/handlers/similar.py` → done when 3 seed songs each get 5 tracks, and the reply lists the seed.
 
