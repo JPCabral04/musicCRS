@@ -157,7 +157,7 @@ Signals per source (a plain dict, JSON-like, so F3 can read it without knowing w
 | --- | --- |
 | R6 recommend (JP, T7 adds `retrievers`) | `{"source": "recommend", "base_ids": [...], "different": False, "retrievers": {"bm25_plus": 3, "dense": 12}}` |
 | R8 playlist (JP) | `{"source": "playlist", "description": "sad love songs", "query": "<the LLM's search words>"}` |
-| Critique (JP, T3/T5) | `{"source": "critique", "liked": ["id2"], "disliked": [], "filters": ["older than 1998"], "similarity": 0.82}` |
+| Critique (JP, T3/T5) | `{"source": "critique", "liked": ["id2"], "disliked": [], "filters": [{"attribute": "year", "direction": "less", "value": 1998}], "similarity": 0.82}` (`filter_text` turns a filter into "older than 1998") |
 | Sounds like (Ale, T6) | `{"source": "audio", "seed_id": "...", "similarity": 0.91}` |
 | Lyrics (Ale, T8) | `{"source": "lyrics", "theme": "leaving home", "similarity": 0.58}` |
 
@@ -210,11 +210,35 @@ def handle_critique(parsed, state, services):
 - The reply says what it did: "More like *Numb* (Linkin Park), less like *Toxic*:" then the 5 tracks, so the user sees the critique was understood.
 - Both slots are resolved by `pick_shown` before anything changes, so "more like #7" changes nothing. A liked or disliked song is in `shown`, so it never comes back on screen and cannot be picked twice: likes and dislikes are a plain append.
 - Each new track's signals: `{"source": "critique", "liked", "disliked", "filters", "similarity"}` (copies of the lists, the track's own cosine to the query). `show_tracks(new_list=False)` keeps the base and the likes.
-- Attribute slots alone ("older") still get the stub reply until T5.
+- Attribute slots alone ("older") got the stub reply until T5 (§4.2).
 - γ stays 0.15: 0.25 and 0.5 were tried (Oct 30); they pushed jazz out of jazz (Ministry, Led Zeppelin) and, at 0.5, lost the like in pop.
 - **Done when:** after a rock recommendation, "more like the second one" gives 5 unseen tracks whose mean cosine to #2 is higher than the first list's (printed by `check_critique`). **Done Oct 30:** `check_critique` 46/46 on rock / jazz / pop; cosine to #2 0.601 → 0.840 (rock), 0.425 → 0.592 (jazz), 0.750 → 0.902 (pop); 9 ms per critique.
 
 ### 4.2 F1.2 Attribute critiques, stacking, no repeats — T5, JP
+
+**As built (Oct 30, branch `jp/attr-critique`).** Same file as T3 (`handlers/critique.py`), one code path for likes and filters:
+
+```python
+POOL_SIZE = 1000   # nearest tracks the filters choose from; each median keeps about half
+
+def make_filter(slots, track_ids, db):
+    """{"attribute", "direction", "value"}: value = the median of the list on screen
+    (year or popularity), or the tag in lower case. None if a slot is missing."""
+def passes_filter(track, one_filter): ...     # strict < / >; no year -> fails; whole tags only
+def passes_filters(track, filters): ...       # every filter (they add up)
+def filter_text(one_filter): ...              # "older than 2000", "popularity above 54",
+                                              # "tagged acoustic", "not tagged rap" (also for F3)
+```
+
+- The median is the middle value once sorted (`values[len // 2]`), so it stays a whole year.
+- The limit is taken from the list **on screen when the critique is said**, so after "older", "more popular" compares to the median of the older list (rock: popularity above 54), not of the first one.
+- `handle_critique`: `nearest(SPACE, query, POOL_SIZE, exclude)`, then a loop keeps the first 5 tracks that pass every filter. With no filters the first 5 pass, so T3 lists are unchanged.
+- **Nothing passes** ("more polka" on rock): this turn's like, dislike and filter are popped, the list stays, and the reply names the filters. **Fewer than 5:** shown, plus "Only 3 new songs near this list are …".
+- Missing attribute (`/critique colour more`) or tag → a short reply listing what can be changed.
+- Tags compared in lower case (the catalog has both "Instrumental" and "instrumental"), whole tags only ("rap" must not match "trap"). Counts: "acoustic" 3,189 tracks, "rap" 3,099, "hard rock" 5,740.
+- **Done Oct 30:** `check_critique` 104/104 (46 of T3 + 58). Rock: older than 2000 → + popularity above 54 (still all older than 2000) → older than 1998; jazz 1987 → above 40 → 1959; pop 2013 → above 56 → 2007. No repeats anywhere. 12 ms median per critique, 52 ms max.
+
+First plan (kept for reference):
 
 Each attribute critique becomes a **filter with a fixed threshold**, taken from the list on screen when the critique is made:
 

@@ -1,4 +1,4 @@
-"""Check the example critiques (Part 4, T3, F1.1) on the rock, jazz and pop playlists.
+"""Check the critiques (Part 4, T3 F1.1 and T5 F1.2) on the rock, jazz and pop playlists.
 
 Run from the repo root (no API key needed, the LLM is not used; about 1 min, most of it
 loading the retriever for the first recommendation):
@@ -11,15 +11,18 @@ For each playlist: R6 recommends 5 songs, then "more like the second one", then
   (mean audio cosine to #2, #2 itself left out of the first list's mean);
 - after the dislike, the songs are further from the disliked one than the list it was in,
   and the like is still applied.
-Then the replies with no list, a number out of range, a changed mind and an attribute
-critique (T5). Exits with code 1 if a check fails.
+Then, for each playlist again (F1.2): R6, "older", "more popular", "older" again, checking
+that every song is on the asked side of the median of the list on screen, the filters add
+up, and no song comes back. Then the replies with no list, a number out of range, a changed
+mind, a tag, "like #2 but older", a filter nothing passes and a missing attribute.
+Exits with code 1 if a check fails.
 """
 import sys
 import time
 
 import numpy as np
 
-from ..handlers.critique import SPACE, handle_critique
+from ..handlers.critique import SPACE, handle_critique, lower_tags, year_of
 from ..handlers.recs import NUM_RECOMMENDATIONS, handle_recommend
 from ..musiccrs import create_services
 from ..state import DialogueState, ParsedIntent
@@ -133,6 +136,148 @@ def check_playlist(name, services, timings):
     check(state.critique["base_ids"] == first, "the base list is still the R6 list")
 
 
+def attribute_values(track_ids, attribute, db):
+    """The years or the popularities of the tracks (tracks without a year left out)."""
+    values = []
+    for track_id in track_ids:
+        track = db.get(track_id)
+        if attribute == "year":
+            value = year_of(track)
+        else:
+            value = track.popularity
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def middle_value(values):
+    """The median of a list of numbers (the middle one once sorted)."""
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def count_outside(track_ids, attribute, direction, limit, db):
+    """How many tracks are NOT on the asked side of the limit (a track without a year counts)."""
+    outside = 0
+    for track_id in track_ids:
+        track = db.get(track_id)
+        if attribute == "year":
+            value = year_of(track)
+        else:
+            value = track.popularity
+        if value is None:
+            outside = outside + 1
+        elif direction == "less" and not value < limit:
+            outside = outside + 1
+        elif direction == "more" and not value > limit:
+            outside = outside + 1
+    return outside
+
+
+def check_attributes(name, services, timings):
+    """F1.2 on one playlist: R6, "older", "more popular", "older" again.
+
+    Done when: after "older" then "more popular", every song is older than the first list's
+    median year and more popular than the median of the list on screen, none shown before.
+    """
+    print("\n" + name + ": attribute critiques")
+    db = services.db
+    playlist = build_playlist(services, PLAYLISTS[name])
+    state = DialogueState(playlist=list(playlist))
+
+    handle_recommend(ParsedIntent("RECOMMEND", {}), state, services)
+    first = list(state.last_shown)
+    print_list("R6:", first, db)
+    seen_ids = set(first)
+
+    # "older": every song before the first list's median year.
+    year_limit = middle_value(attribute_values(first, "year", db))
+    second, ms = critique(state, services, {"attribute": "year", "direction": "less"})
+    timings.append(ms)
+    print_list("older (than " + str(year_limit) + "):", second, db)
+    check_new_list(second, seen_ids, playlist)
+    outside = count_outside(second, "year", "less", year_limit, db)
+    check(outside == 0, "all older than " + str(year_limit) + " (" + str(outside) + " not)")
+    for track_id in second:
+        seen_ids.add(track_id)
+
+    # "more popular": still older (the filters add up), and above the median on screen.
+    popularity_limit = middle_value(attribute_values(second, "popularity", db))
+    third, ms = critique(state, services, {"attribute": "popularity", "direction": "more"})
+    timings.append(ms)
+    print_list("more popular (than " + str(popularity_limit) + "):", third, db)
+    check_new_list(third, seen_ids, playlist)
+    outside = count_outside(third, "year", "less", year_limit, db)
+    check(outside == 0, "still older than " + str(year_limit) + " (" + str(outside) + " not)")
+    outside = count_outside(third, "popularity", "more", popularity_limit, db)
+    check(outside == 0, "all popularity above " + str(popularity_limit)
+          + " (" + str(outside) + " not)")
+    check(len(state.critique["filters"]) == 2, "two filters stored")
+    for track_id in third:
+        seen_ids.add(track_id)
+
+    # "older" again: the new median comes from the already older list on screen.
+    second_year_limit = middle_value(attribute_values(third, "year", db))
+    fourth, ms = critique(state, services, {"attribute": "year", "direction": "less"})
+    timings.append(ms)
+    print_list("older again (than " + str(second_year_limit) + "):", fourth, db)
+    check(second_year_limit <= year_limit, "the second year limit is not later: "
+          + str(year_limit) + " -> " + str(second_year_limit))
+    if len(fourth) > 0:
+        outside = count_outside(fourth, "year", "less", second_year_limit, db)
+        check(outside == 0, "all older than " + str(second_year_limit)
+              + " (" + str(outside) + " not)")
+    for track_id in fourth:
+        check(track_id not in seen_ids, "not shown before: " + db.get(track_id).name)
+
+
+def check_attribute_edge_cases(services):
+    """A tag, a like and a filter in one sentence, a filter nothing passes, a missing slot."""
+    print("\nAttribute edge cases")
+    db = services.db
+    playlist = build_playlist(services, PLAYLISTS["rock"])
+    state = DialogueState(playlist=list(playlist))
+    handle_recommend(ParsedIntent("RECOMMEND", {}), state, services)
+
+    # "more hard rock": every song has the tag (whatever its case in the catalog).
+    tag_list, ms = critique(state, services,
+                            {"attribute": "tag", "direction": "more", "tag": "Hard Rock"})
+    without = 0
+    for track_id in tag_list:
+        if "hard rock" not in lower_tags(db.get(track_id)):
+            without = without + 1
+    check(len(tag_list) > 0 and without == 0,
+          "'more hard rock' -> all tagged hard rock (" + str(without) + " not)")
+
+    # "like #2 but older": both the like and the filter.
+    liked_id = state.last_shown[1]
+    year_limit = middle_value(attribute_values(state.last_shown, "year", db))
+    both, ms = critique(state, services,
+                        {"like": "2", "attribute": "year", "direction": "less"})
+    check(state.critique["liked"] == [liked_id], "'like #2 but older' stores the like")
+    outside = count_outside(both, "year", "less", year_limit, db)
+    check(len(both) > 0 and outside == 0, "'like #2 but older' -> all older than "
+          + str(year_limit) + " (" + str(outside) + " not)")
+
+    # A filter nothing passes is undone: the list and the filters stay as they were.
+    before_list = list(state.last_shown)
+    before_filters = list(state.critique["filters"])
+    reply = handle_critique(ParsedIntent("CRITIQUE",
+                                         {"attribute": "tag", "direction": "more", "tag": "polka"}),
+                            state, services)
+    check(reply.text.startswith("Sorry, no new songs"), "'more polka' -> 'Sorry, no new songs'")
+    check(state.last_shown == before_list and state.critique["filters"] == before_filters,
+          "'more polka' changes nothing")
+
+    # Only a direction (the parser dropped an unknown attribute, "/critique colour more").
+    reply = handle_critique(ParsedIntent("CRITIQUE", {"direction": "more"}), state, services)
+    check(reply.text.startswith("I can change the songs"), "no attribute -> 'I can change'")
+
+    # A new recommendation starts a new critique session: no filters.
+    handle_recommend(ParsedIntent("RECOMMEND", {}), state, services)
+    check(state.critique["filters"] == [], "a new recommendation forgets the filters")
+
+
 def check_edge_cases(services):
     """No list yet, a wrong number, a changed mind, an attribute critique."""
     print("\nEdge cases")
@@ -166,8 +311,7 @@ def check_edge_cases(services):
 
     reply = handle_critique(ParsedIntent("CRITIQUE", {"attribute": "year", "direction": "less"}),
                             state, services)
-    check(reply.text.startswith("Critiques by year, popularity or tag are not built yet"),
-          "'older' -> the T5 stub")
+    check("older than" in reply.text, "'older' -> a list 'older than <median year>'")
 
 
 def main():
@@ -175,7 +319,10 @@ def main():
     timings = []
     for name in ["rock", "jazz", "pop"]:
         check_playlist(name, services, timings)
+    for name in ["rock", "jazz", "pop"]:
+        check_attributes(name, services, timings)
     check_edge_cases(services)
+    check_attribute_edge_cases(services)
 
     timings.sort()
     print("\nms per critique: median " + str(round(timings[len(timings) // 2]))
