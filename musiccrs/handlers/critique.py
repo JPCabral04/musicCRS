@@ -104,6 +104,121 @@ def critique_text(critique, db):
     return text + ":"
 
 
+def year_of(track):
+    """The release year as a number, or None if unknown: "1991-09-24" -> 1991, "" -> None."""
+    if track.release_date == "":
+        return None
+    return int(track.release_date[:4])
+
+
+def lower_tags(track):
+    """The track's tags in lower case: ("Instrumental", "piano") -> {"instrumental", "piano"}."""
+    tags = set()
+    for tag in track.tags:
+        tags.add(tag.lower())
+    return tags
+
+
+def make_filter(slots, track_ids, db):
+    """The filter of one attribute critique (F1.2), its threshold taken from the list on screen.
+
+    {"attribute": "year", "direction": "less"}, years on screen [1986, 1988, 1991, 1995, 2000]
+        -> {"attribute": "year", "direction": "less", "value": 1991}        (the median)
+    {"attribute": "tag", "direction": "more", "tag": "Acoustic"}
+        -> {"attribute": "tag", "direction": "more", "value": "acoustic"}
+    None when a slot is missing or no track on screen has a year.
+    """
+    if "attribute" not in slots or "direction" not in slots:
+        return None
+    attribute = slots["attribute"]
+    direction = slots["direction"]
+
+    if attribute == "tag":
+        if "tag" not in slots:
+            return None
+        return {"attribute": "tag", "direction": direction, "value": slots["tag"].lower()}
+
+    # Year or popularity: the values of the tracks on screen (tracks without a year left out).
+    values = []
+    for track_id in track_ids:
+        track = db.get(track_id)
+        if attribute == "year":
+            value = year_of(track)
+        else:
+            value = track.popularity
+        if value is not None:
+            values.append(value)
+    if len(values) == 0:
+        return None
+
+    # The middle value once sorted (5 values -> the 3rd). Stays a whole number, unlike
+    # statistics.median, which gives 1990.5 for an even count.
+    values.sort()
+    median = values[len(values) // 2]
+    return {"attribute": attribute, "direction": direction, "value": median}
+
+
+def passes_filter(track, one_filter):
+    """True if the track passes one filter.
+
+    year less 1991 -> released before 1991 (a track without a year never passes)
+    popularity more 45 -> popularity above 45
+    tag more "acoustic" -> "acoustic" is one of its tags; tag less "rap" -> "rap" is not
+    """
+    attribute = one_filter["attribute"]
+    direction = one_filter["direction"]
+    value = one_filter["value"]
+
+    if attribute == "tag":
+        # Whole tags only: "rap" must not match "trap".
+        has_tag = value in lower_tags(track)
+        if direction == "more":
+            return has_tag
+        return not has_tag
+
+    if attribute == "year":
+        track_value = year_of(track)
+        if track_value is None:
+            return False
+    else:
+        track_value = track.popularity
+
+    if direction == "more":
+        return track_value > value
+    return track_value < value
+
+
+def passes_filters(track, filters):
+    """True if the track passes every filter of the critique session (they add up)."""
+    for one_filter in filters:
+        if not passes_filter(track, one_filter):
+            return False
+    return True
+
+
+def filter_text(one_filter):
+    """One filter in words, for the reply and for "why this song?" (F3).
+
+    year less 1991 -> "older than 1991"         popularity more 45 -> "popularity above 45"
+    tag more "acoustic" -> "tagged acoustic"     tag less "rap" -> "not tagged rap"
+    """
+    attribute = one_filter["attribute"]
+    direction = one_filter["direction"]
+    value = html.escape(str(one_filter["value"]), quote=False)
+
+    if attribute == "year":
+        if direction == "less":
+            return "older than " + value
+        return "newer than " + value
+    if attribute == "popularity":
+        if direction == "more":
+            return "popularity above " + value
+        return "popularity below " + value
+    if direction == "more":
+        return "tagged " + value
+    return "not tagged " + value
+
+
 def handle_critique(parsed, state, services):
     """CRITIQUE (F1.1): add the like / dislike to the critique session, rank again with the
     Rocchio query, show the 5 nearest tracks never shown before.
