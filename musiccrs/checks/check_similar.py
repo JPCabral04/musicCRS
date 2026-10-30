@@ -16,6 +16,7 @@ Exits with code 1 if a check fails.
 import sys
 
 from ..data.db import base_name
+from ..data.resolver import resolve
 from ..handlers.recs import NUM_RECOMMENDATIONS
 from ..handlers.similar import handle_lyrics_search, handle_sounds_like
 from ..musiccrs import create_services
@@ -84,6 +85,8 @@ def check_sounds_like(services):
         if base_name(track.name) == "numb" and track.artists[0] == "Linkin Park":
             no_seed_version = False
     check(no_seed_version, "/sounds numb: no version of Numb by Linkin Park")
+    seed_id = resolve(db, "numb", "linkin park")[0].track_id
+    check(seed_id in state.shown, "/sounds numb: the seed counts as shown (no critique brings it back)")
 
     # The same question again: 5 new songs, none of the first list (F1.2).
     first_list = list(state.last_shown)

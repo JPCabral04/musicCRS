@@ -91,6 +91,8 @@ def handle_sounds_like(parsed, state, services):
     for track in tracks:
         track_ids.append(track.track_id)
     show_tracks(state, track_ids, signals_by_id, new_list=True)
+    # The user named the seed, so a critique of this list must not suggest it back.
+    state.shown.add(seed_id)
 
     title = "Songs that sound like <b>" + describe_track(seed_track) + "</b>:"
     return Reply(list_text(title, tracks), [options_act(tracks)])
