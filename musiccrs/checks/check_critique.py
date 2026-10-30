@@ -12,7 +12,7 @@ For each playlist: R6 recommends 5 songs, then "more like the second one", then
 - after the dislike, the songs are further from the disliked one than the list it was in,
   and the like is still applied.
 Then the replies with no list, a number out of range, a changed mind and an attribute
-critique (T5). Exits with code 1 if a check fails.
+critique. Exits with code 1 if a check fails.
 """
 import sys
 import time
@@ -166,8 +166,7 @@ def check_edge_cases(services):
 
     reply = handle_critique(ParsedIntent("CRITIQUE", {"attribute": "year", "direction": "less"}),
                             state, services)
-    check(reply.text.startswith("Critiques by year, popularity or tag are not built yet"),
-          "'older' -> the T5 stub")
+    check("older than" in reply.text, "'older' -> a list 'older than <median year>'")
 
 
 def main():
