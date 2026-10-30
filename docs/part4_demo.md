@@ -25,8 +25,10 @@ After the retriever, the backend loads the track vectors and prints:
 Track vectors loaded in 0.4 s:
   metadata: 47071 x 1024, 46579 tracks with a vector
   audio: 47071 x 512, 46579 tracks with a vector
-  lyrics: 47071 x 1024, 46579 tracks with a vector
+  lyrics: 47071 x 1024, 46257 tracks with a vector
 ```
+
+Lyrics has fewer: 322 placeholder vectors (instrumentals) are left out (T8).
 
 The first start downloads the audio and lyrics vectors (~290 MB into `cache/embeddings/`).
 
@@ -59,8 +61,8 @@ Expected replies until the features are built (the slots are what the parser und
 | --- | --- |
 | `/like 2` | Built in T3, see below. Before any recommendation: "Ask me for recommendations first, …" |
 | `/critique tag more acoustic` | Built in T5, see below. |
-| `/sounds nirvana: smells like teen spirit` | 'Sounds like' is not built yet. I understood: {'track': 'smells like teen spirit', 'artist': 'nirvana'} |
-| `/about leaving home` | Lyrics search is not built yet. I understood: {'theme': 'leaving home'} |
+| `/sounds nirvana: smells like teen spirit` | Built in T6, see below. |
+| `/about leaving home` | Built in T8, see below. |
 | "why did you pick the third one?" (with the key) | Explanations are not built yet. I understood: {'option': '3'} |
 
 ### Example critiques (T3, F1.1): "more like the second one"
@@ -111,15 +113,63 @@ Have A Nice Day, Sex on Fire):
 `check_critique` runs the same steps on the rock, jazz and pop playlists (jazz: older than
 1987, then popularity above 40, then older than 1959).
 
+### Covers and previews (T2, T4): album art and 30-second clips
+
+Every song in the playlist panel and in every list of options in the chat (choices,
+recommendations, critiques, sounds like, lyrics) shows its album cover and a play button.
+They come from the Deezer search API (no key), looked up one song after the other and kept
+in memory by track ID. A new list of 5 costs about 1 s; the same songs again cost a few ms.
+If Deezer is slow, lookups stop after 2 s and the remaining songs get no card in that reply
+(the reply stays within 3-5 s; they are looked up again next time).
+
+| Do | Expected |
+| --- | --- |
+| `/add nirvana: smells like teen spirit` | The panel shows the song with its Nevermind cover and a play button. |
+| `/add eagles: hotel california` | The choice buttons, plus a card per version with cover and preview. |
+| Play one preview, then another | The first one stops (one preview at a time in the panel). |
+| `/recommend` | The 5 songs as buttons, and below the text a card per song (cover, name, artist, player). |
+
+### Sounds like (T6, F2.1): "songs that sound like Smells Like Teen Spirit"
+
+The named song is the seed. Its **audio** vector (CLAP, made from the sound) is compared with
+every other track's, and the 5 closest never shown before come back, leaving out other
+versions of the seed. A new list starts, so critiques work on it. No LLM besides the parser.
+
+| Type | Natural language (needs the key) | Expected reply |
+| --- | --- | --- |
+| `/sounds nirvana: smells like teen spirit` | "songs that sound like Smells Like Teen Spirit" | **Songs that sound like Smells Like Teen Spirit by Nirvana:** I Stand Alone (Godsmack), Stay Away (Nirvana), One Weak (Deftones), In Bloom - Nevermind Version (Nirvana), Another Brick in the Wall, Pt. 1, 2, 3 (Korn). |
+| `/like 3` | "more like the third one" | **More like One Weak by Deftones:** Heroin Girl (Everclear), Stress (Godsmack), Victims (Lacuna Coil), P.S. New York Is Burning (Jawbreaker), Gonna Be A Blackout Tonight (Dropkick Murphys). The seed never comes back. |
+| `/sounds xqzvwk` | — | I could not find 'xqzvwk' in the catalog. |
+
+"Songs **like** Numb" is still R6 (the Part 1 retriever); only "sound like" uses the audio.
+
+### Lyrics search (T8, F2.2): "songs about leaving home"
+
+The theme is encoded by the same Qwen3 model as the lyrics vectors, and the 5 tracks whose
+lyrics vectors are closest come back. Placeholder lyrics vectors (322 instrumentals sharing
+one vector) are left out. A new list starts. No LLM besides the parser.
+
+| Type | Natural language (needs the key) | Expected reply |
+| --- | --- | --- |
+| `/about leaving home` | "songs about leaving home" | **Songs whose lyrics are about leaving home:** Leaving Home (Jebediah), Can We Go Wrong (Hesta Prynn), In The Wild (Alpine), Mickey Mouse (Wavves), Stay Home (American Football). |
+| `/about heartbreak` | "songs about heartbreak" | Bringin' On The Heartbreak (Mariah Carey), Break My Heart (Hey Violet), This Is How A Heart Breaks (Rob Thomas), … |
+| `/about partying all night` | "songs about partying all night" | Party All Night (Quiet Riot), Party All the Time (Eddie Murphy), Party In Your Bedroom (Cash Cash), No Sleep (Wiz Khalifa), … |
+
+(Lists for a fresh conversation; songs shown before are skipped.)
+
 ---
 
 ## 3. Command-line checks
 
 ```bash
 python -m musiccrs.data.vectors          # T1: matrix sizes + 5 audio neighbours of Smells Like Teen Spirit (~15 s)
-python -m musiccrs.checks.check_base     # T1: 71 checks of slash commands, shown tracks, pick_shown, nearest (no key, ~12 s)
+python -m musiccrs.checks.check_base     # T1: 68 checks of slash commands, shown tracks, pick_shown, nearest (no key, ~12 s)
 python -m musiccrs.checks.check_nlu      # T1: 53 sentences, 14 of them Part 4 (needs the key)
 python -m musiccrs.checks.check_critique # T3 + T5: 104 checks, like / dislike / attributes on rock, jazz, pop (no key, ~1 min)
+python -m musiccrs.data.media           # T2: Deezer cover and preview of Smells Like Teen Spirit (network)
+python -m musiccrs.checks.check_similar  # T6 + T8: 27 checks of sounds like and lyrics search (no key, ~1 min)
+python -m musiccrs.checks.check_lyrics   # T8: missing and placeholder lyrics vectors (~10 s)
+python -m musiccrs.checks.eval_audio     # T10 F5b: tags shared with 1,000 seeds, audio vs metadata vs random (~25 s)
 ```
 
 Expected output (Oct 29):
@@ -149,3 +199,23 @@ Expected output (Oct 29):
   ok    the second year limit is not later: 2000 -> 1998
   ```
   then 7 + 7 edge cases, `ms per critique: median 12, max 52` and `OK: every check passed.`
+- `musiccrs.data.media` (Oct 30): `Smells Like Teen Spirit by Nirvana (288 ms)`, then a
+  `Cover:` URL (`cdn-images.dzcdn.net/...jpg`) and a `Preview:` URL (`...mp3`).
+- `check_similar` (Oct 30): the Numb list, the three theme lists above, `ok` lines and
+  `OK: every check passed.`
+- `check_lyrics` (Oct 30):
+  ```
+  Without a lyrics vector:    492 (1.05%)
+  Placeholder rows:           322 (0.68%)  (a vector shared by more than 10 tracks)
+  Usable for lyrics search: 46257 (98.27%)
+  ```
+  then the biggest placeholder groups (30 tracks, e.g. Nefeli by Ludovico Einaudi; 29, e.g.
+  The Spiders by John Williams; ...).
+- `eval_audio` (Oct 30, seed 42): mean tags shared with the seed, the seed's artist left out:
+  ```
+  audio    3.61
+  metadata 2.311
+  random   1.491
+  ```
+  Songs that sound alike share more tags than songs with similar metadata text, and both
+  far more than random songs.
