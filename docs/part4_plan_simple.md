@@ -103,6 +103,7 @@ Each task: **what** → **file** → **done when**. One week, so each task gets 
 
 - **JP — T7. F3 why this song?** "Why the second one?" / "why Numb?" → 2–4 sentences built from the track's stored signals (which retrievers found it, critiques applied, audio or lyrics similarity) plus facts checked against the database (shared tags, same artist as a playlist song).
 → `musiccrs/handlers/explain.py`, a small addition to `retrieval/final_retriever.py` → done when it works for a track from each source (recommend, critique, sounds like, lyrics) and every sentence can be traced to a stored value.
+**Done Oct 30** (branch `jp/explain`): `check_explain` 41/41, 2 ms per explanation. R6 now stores each song's rank in every Part 1 retriever; sounds like and lyrics checked with hand-made signals until Alejandro's `similar.py` is merged, see `part4_plan_detailed.md` §4.5.
 - **Alejandro — T8. F2.2 lyrics search.** Leave out the tracks with an empty or meaningless lyrics vector (counted on Saturday). Embed the theme with the same Qwen3 model (already loaded by the retriever) and show the 5 nearest lyrics vectors.
 → `musiccrs/handlers/similar.py`, `musiccrs/checks/check_lyrics.py` → done when "songs about leaving home", "heartbreak" and "partying all night" give 3 different, plausible lists.
 - **Evening sync:** each person runs the *other's* branch from a fresh `git pull`. Merge everything into `main`. All 7 rubric features should now be demoable.

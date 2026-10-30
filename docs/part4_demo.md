@@ -61,7 +61,7 @@ Expected replies until the features are built (the slots are what the parser und
 | `/critique tag more acoustic` | Built in T5, see below. |
 | `/sounds nirvana: smells like teen spirit` | 'Sounds like' is not built yet. I understood: {'track': 'smells like teen spirit', 'artist': 'nirvana'} |
 | `/about leaving home` | Lyrics search is not built yet. I understood: {'theme': 'leaving home'} |
-| "why did you pick the third one?" (with the key) | Explanations are not built yet. I understood: {'option': '3'} |
+| "why did you pick the third one?" (with the key) | Built in T7, see below. Before any recommendation: "There is no list of recommended songs to explain yet. …" |
 
 ### Example critiques (T3, F1.1): "more like the second one"
 
@@ -111,6 +111,29 @@ Have A Nice Day, Sex on Fire):
 `check_critique` runs the same steps on the rock, jazz and pop playlists (jazz: older than
 1987, then popularity above 40, then older than 1959).
 
+### Why this song? (T7, F3): "why the second one?"
+
+Up to four sentences, each built with a template from one fact: how the song was found (stored
+when it was shown), which Part 1 retrievers ranked it and where (recommendations only), the
+tags it shares with the songs it came from, and an artist already in the playlist (both
+checked in the database). No LLM writes the reasons, so they cannot be invented. Only songs
+of the last list can be asked about. About 2 ms.
+
+On the same rock playlist:
+
+| Type | Natural language (needs the key) | Expected reply |
+| --- | --- | --- |
+| `/recommend`, then `/why 2` | "why the second one?" | **Why I showed you Bad Medicine by Bon Jovi:** I recommended it for Smells Like Teen Spirit, Hotel California, It's My Life. It was found by matching the words of your songs (#116), being by an artist of your songs (#1). It shares the tags *hard rock*, *jon bon jovi*, *favorite* with those songs. Its artist Bon Jovi is already in your playlist. |
+| `/why come as you are` | "why did you pick Come As You Are?" | Same form for #1, found by three retrievers: words (#10), same artist (#59), listening patterns of other users (#2). |
+| `/recommend`, `/like 2`, `/critique year less`, then `/why 1` | "why the first one?" | **Why I showed you Wild Is The Wind by Bon Jovi:** It came from your critique "More like Bad Medicine by Bon Jovi, older than 1996", as one of the songs closest in sound to it (audio similarity 0.91). It shares the tags *hard rock*, *melodic hard rock*, *jon bon jovi* with Bad Medicine. Its artist Bon Jovi is already in your playlist. |
+| `/why 7` | "why the seventh one?" | I could not find '7' in the last list I showed you. Say a number from 1 to 5, or part of a title or an artist. |
+| `/why` | — | Which song? For example: 'why the second one?' or '/why 2'. |
+
+The "why" options stay pending, so "add the second one" still works afterwards. For "sounds
+like" and lyrics songs (once Alejandro's T6 / T8 are merged) the first sentence becomes "It
+sounds close to Smells Like Teen Spirit by Nirvana (audio similarity 0.93)." or "Its lyrics
+are close to the theme 'leaving home' (lyrics similarity 0.55)."
+
 ---
 
 ## 3. Command-line checks
@@ -120,6 +143,7 @@ python -m musiccrs.data.vectors          # T1: matrix sizes + 5 audio neighbours
 python -m musiccrs.checks.check_base     # T1: 71 checks of slash commands, shown tracks, pick_shown, nearest (no key, ~12 s)
 python -m musiccrs.checks.check_nlu      # T1: 53 sentences, 14 of them Part 4 (needs the key)
 python -m musiccrs.checks.check_critique # T3 + T5: 104 checks, like / dislike / attributes on rock, jazz, pop (no key, ~1 min)
+python -m musiccrs.checks.check_explain  # T7: 41 checks, one song per source, numbers traced to stored values (no key, ~1 min)
 ```
 
 Expected output (Oct 29):
@@ -149,3 +173,12 @@ Expected output (Oct 29):
   ok    the second year limit is not later: 2000 -> 1998
   ```
   then 7 + 7 edge cases, `ms per critique: median 12, max 52` and `OK: every check passed.`
+- `check_explain` (Oct 30): first the ranks, for example
+  ```
+  ok    use_same_artist=True: same 100 IDs as retrieve()
+  ok    bm25_plus rank 10 (stored 10)
+  ok    same_artist is off, not stored
+  ```
+  then each explanation (lines starting with `|`) followed by `ok` lines such as
+  `ok    every number is stored (found ['1996', '0.91'], not stored [])`, then 4 edge cases,
+  `ms per explanation: median 1.7, max 2.3` and `OK: every check passed.`
