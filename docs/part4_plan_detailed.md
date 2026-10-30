@@ -33,8 +33,8 @@ From `talkpl-ai/TalkPlayData-Challenge-Track-Embeddings`, split `all_tracks` (Pa
 
 | Field | Dim | Notes | Used by |
 | --- | ---: | --- | --- |
-| `metadata-qwen3_embedding_0.6b` | 1024 | already loaded by the dense scorer (normalized) | F1, F3, F5b baseline |
-| `audio-laion_clap` | 512 | norm 1.0 | F2.1, F5b |
+| `metadata-qwen3_embedding_0.6b` | 1024 | already loaded by the dense scorer (normalized) | F3, F5b baseline (F1 moved to audio, §4.1) |
+| `audio-laion_clap` | 512 | norm 1.0 | F1 (critiques), F2.1, F5b |
 | `lyrics-qwen3_embedding_0.6b` | 1024 | not normalized (norm ~110); `load_track_matrix` normalizes it | F2.2 |
 
 - 492 tracks have **no** vector in any Qwen3 field nor in CLAP (zero rows, `has_vector = False`). They are never returned by `nearest`.
@@ -184,26 +184,35 @@ Since T1, R6 calls `show_tracks` and R8 calls `remember_tracks` (in `recs.py`), 
 
 ### 4.1 F1.1 Example critiques — T3, JP (`handlers/critique.py`)
 
-**Idea (Rocchio relevance feedback):** the list on screen is described by one vector, the average of its tracks' metadata vectors. A critique moves that vector:
+**As built (Oct 30, branch `jp/critique`).** One change from the first plan: the critiques move in the **audio** space (CLAP), not the metadata space. The metadata vectors are text embeddings of title / artist / album, so they match title words: "more like *Bad Medicine* (Bon Jovi)" gave *Bad Seeds*, *Adderall*, *Bad Business* (21 Savage), *Medicine*. In audio it gave Pearl Jam, Ratt, Bon Jovi ×2, Bad Religion; on jazz, Mingus, Sinatra, Mulligan, Chet Baker. The BPR (co-listening) vectors were also tried: good for very popular artists, noisy otherwise (jazz → Enrique Iglesias). One constant, `SPACE = "audio"`.
+
+**Idea (Rocchio relevance feedback):** the list on screen is described by one vector, the average of its tracks' audio vectors. A critique moves that vector:
 
 ```
 new_query = α · base  +  β · mean(liked vectors)  −  γ · mean(disliked vectors)
 α = 1.0, β = 0.75, γ = 0.15   (the classic SMART values)
 ```
 
-then L2-normalize and take `vectors.nearest("metadata", new_query, k, exclude = state.shown ∪ playlist)`.
+then L2-normalize and take `vectors.nearest(SPACE, new_query, 5, exclude = state.shown ∪ playlist)`.
 
 ```python
-def critique_query(state, vectors):
-    """The Rocchio vector from state.critique: base mean, liked mean, disliked mean."""
+def mean_vector(track_ids, vectors):
+    """Mean of the tracks' vectors in SPACE (tracks without one left out), or None."""
+
+def critique_query(critique, vectors):
+    """The Rocchio vector of state.critique, L2-normalized, or None if the base has no vectors."""
 
 def handle_critique(parsed, state, services):
-    """CRITIQUE: add the like / dislike / filter to state.critique, rank again, show 5 new tracks."""
+    """CRITIQUE: add the like / dislike to state.critique, rank again, show 5 new tracks."""
 ```
 
 - `base` is fixed when the list first appears (`show_tracks` with `new_list=True`), and liked / disliked **accumulate** across turns. So "more like #2", then "less like #4" applies both.
 - The reply says what it did: "More like *Numb* (Linkin Park), less like *Toxic*:" then the 5 tracks, so the user sees the critique was understood.
-- **Done when:** after a rock recommendation, "more like the second one" gives 5 unseen tracks whose mean cosine to #2 is higher than the first list's (printed by `check_critique`).
+- Both slots are resolved by `pick_shown` before anything changes, so "more like #7" changes nothing. A liked or disliked song is in `shown`, so it never comes back on screen and cannot be picked twice: likes and dislikes are a plain append.
+- Each new track's signals: `{"source": "critique", "liked", "disliked", "filters", "similarity"}` (copies of the lists, the track's own cosine to the query). `show_tracks(new_list=False)` keeps the base and the likes.
+- Attribute slots alone ("older") still get the stub reply until T5.
+- γ stays 0.15: 0.25 and 0.5 were tried (Oct 30); they pushed jazz out of jazz (Ministry, Led Zeppelin) and, at 0.5, lost the like in pop.
+- **Done when:** after a rock recommendation, "more like the second one" gives 5 unseen tracks whose mean cosine to #2 is higher than the first list's (printed by `check_critique`). **Done Oct 30:** `check_critique` 46/46 on rock / jazz / pop; cosine to #2 0.601 → 0.840 (rock), 0.425 → 0.592 (jazz), 0.750 → 0.902 (pop); 9 ms per critique.
 
 ### 4.2 F1.2 Attribute critiques, stacking, no repeats — T5, JP
 
@@ -306,7 +315,7 @@ def media_act(track_ids, db, catalog):
 
 1. `val0` sessions (1,000, from `data/val_folds.json`). One turn per session: the last turn whose played list is not empty. Context from `build_turn_context`; `gold` = the track the real user chose at that turn.
 2. **Before:** `retriever.retrieve(ctx, 20)`. The first 5 are "shown". Gold among them → the user would accept; count it, skip the turn.
-3. **Simulated user:** "more like #k", where #k is the shown track whose metadata vector is closest to the gold's. Second variant: also an attribute critique when it is true for the gold ("older" if the gold's year is below the shown median, else "newer"; same for popularity).
+3. **Simulated user:** "more like #k", where #k is the shown track whose vector in the critique space (`critique.SPACE`, audio since T3) is closest to the gold's. Second variant: also an attribute critique when it is true for the gold ("older" if the gold's year is below the shown median, else "newer"; same for popularity).
 4. **After:** the same `critique.py` functions the agent uses, `exclude = played ∪ shown`, top 20.
 5. Report: nDCG@20 before vs after (`get_ndcg`), the share of turns where the gold's rank improved, and the number of skipped turns, for both variants.
 

@@ -87,6 +87,7 @@ Each task: **what** → **file** → **done when**. One week, so each task gets 
 
 - **JP — T3. F1.1 example critiques.** "More like #2" / "less like the one by X": move the query vector toward the liked tracks and away from the disliked ones (Rocchio), then show the 5 nearest tracks not shown before.
 → `musiccrs/handlers/critique.py` → done when, after a rock recommendation, "more like the second one" gives 5 new tracks closer to #2 (checked by cosine in `check_critique`).
+**Done Oct 30** (branch `jp/critique`): `check_critique` 46/46, 9 ms per critique. Critiques move in the **audio** space, not metadata (metadata matched title words), see `part4_plan_detailed.md` §4.1.
 - **Alejandro — T4. F4 UI.** Under every list in the chat: cover thumbnails and a play button per track. In the playlist panel: a cover and a play button per row.
 → `frontend/src/components/` → done when a recommendation shows 5 covers whose previews play, and the panel shows covers.
 
