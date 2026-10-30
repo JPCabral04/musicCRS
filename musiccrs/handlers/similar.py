@@ -1,126 +1,141 @@
 """Handlers for audio sound similarity (T6) and lyrics theme search (T8)."""
 
-from dialoguekit.core.dialogue_act import DialogueAct
-from dialoguekit.core.intent import Intent
-from dialoguekit.core.annotation import Annotation
+import html
 
-from musiccrs.data.resolver import resolve
-from musiccrs.handlers.shown import show_tracks
-from musiccrs.handlers.recs import options_act
+from ..data.db import base_name
+from ..data.resolver import resolve
+from ..state import Reply
+from .playlist import describe_track, options_act
+from .recs import NUM_RECOMMENDATIONS
+from .shown import show_tracks
+
+
+def list_text(title, tracks):
+    """The reply text: a title, then the songs as a numbered list.
+
+    "Songs that sound like <b>Smells Like Teen Spirit by Nirvana</b>:", [Track, ...]
+    -> "Songs that sound like ...:\n<ol>\n<li>Come As You Are by Nirvana</li>\n...</ol>\n..."
+    """
+    text = title + "\n<ol>\n"
+    for track in tracks:
+        text = text + "<li>" + describe_track(track) + "</li>\n"
+    text = text + "</ol>\n"
+    text = text + "Say 'add the first two', 'more like the third one' or 'why the second one?'."
+    return text
 
 
 def handle_sounds_like(parsed, state, services):
-    """F2.1 / T6: Sound similarity search using CLAP audio vectors."""
+    """F2.1 / T6: songs whose audio (CLAP vector) is closest to one named song.
+
+    "/sounds smells like teen spirit" -> 5 songs nearest to it in the audio space,
+    leaving out other versions of the same song.
+    """
     track_name = parsed.slots.get("track", "")
     artist_name = parsed.slots.get("artist", "")
 
-    if not track_name:
-        return DialogueAct(
-            intent=Intent("RECOMMEND"),
-            annotations=[Annotation("text", "Please specify a track to find similar sounding songs.")],
-        )
+    if track_name == "":
+        return Reply("Tell me a song, for example '/sounds smells like teen spirit'.")
 
-    # 1. Resolve seed track
+    # 1. The seed: the best match of the resolver (it ranks the most popular first).
     candidates = resolve(services.db, track_name, artist_name)
-    if not candidates:
-        return DialogueAct(
-            intent=Intent("RECOMMEND"),
-            annotations=[Annotation("text", f"I couldn't find a track matching '{track_name}'.")],
-        )
-
-    seed_track = max(candidates, key=lambda t: getattr(t, "popularity", 0))
+    if len(candidates) == 0:
+        return Reply("I could not find '" + html.escape(track_name, quote=False)
+                     + "' in the catalog.")
+    seed_track = candidates[0]
     seed_id = seed_track.track_id
 
-    # 2. Get audio vector
     seed_vec = services.vectors.vector("audio", seed_id)
     if seed_vec is None:
-        return DialogueAct(
-            intent=Intent("RECOMMEND"),
-            annotations=[
-                Annotation("text", f"Sorry, no audio features are available for '{seed_track.name}'.")
-            ],
-        )
+        return Reply("Sorry, I have no audio for " + describe_track(seed_track) + ".")
 
-    # 3. Build exclude set
-    playlist_ids = set(t.track_id if hasattr(t, "track_id") else t for t in state.playlist)
-    exclude = state.shown | playlist_ids | {seed_id}
+    # 2. Never show a song again (F1.2), nor one already in the playlist, nor the seed.
+    exclude = set(state.shown)
+    for track_id in state.playlist:
+        exclude.add(track_id)
+    exclude.add(seed_id)
 
-    # 4. Search nearest in audio space using exclude_ids
+    # 3. The 20 nearest, so 5 are left after dropping other versions of the seed.
     nearest_matches = services.vectors.nearest("audio", seed_vec, k=20, exclude_ids=exclude)
 
-    seed_base_name = seed_track.name.split(" - ")[0].lower()
-    seed_artist = seed_track.artists[0].lower() if seed_track.artists else ""
+    seed_base = base_name(seed_track.name)
+    seed_artist = seed_track.artists[0].lower()
 
-    filtered_ids = []
+    tracks = []
     signals_by_id = {}
+    for track_id, score in nearest_matches:
+        track = services.db.get(track_id)
+        if track is None:
+            continue
+        # "Smells Like Teen Spirit - Remastered" by Nirvana is the seed again: skip it.
+        same_song = base_name(track.name) == seed_base
+        same_artist = track.artists[0].lower() == seed_artist
+        if same_song and same_artist:
+            continue
 
-    for tid, score in nearest_matches:
-        t_obj = services.db.get(tid)
-        if t_obj:
-            t_base = t_obj.name.split(" - ")[0].lower()
-            t_art = t_obj.artists[0].lower() if t_obj.artists else ""
-            if t_base == seed_base_name and t_art == seed_artist:
-                continue
-
-        filtered_ids.append(tid)
-        signals_by_id[tid] = {
+        tracks.append(track)
+        signals_by_id[track_id] = {
             "source": "audio",
             "seed_id": seed_id,
             "seed_name": seed_track.name,
             "similarity": float(score),
         }
-        if len(filtered_ids) == 5:
+        if len(tracks) == NUM_RECOMMENDATIONS:
             break
 
-    if not filtered_ids:
-        return DialogueAct(
-            intent=Intent("RECOMMEND"),
-            annotations=[Annotation("text", f"Could not find similar sounding tracks for '{seed_track.name}'.")],
-        )
+    if len(tracks) == 0:
+        return Reply("Sorry, I could not find new songs that sound like "
+                     + describe_track(seed_track) + ".")
 
-    # 5. Store state
-    show_tracks(state, filtered_ids, signals_by_id, new_list=True)
+    # 4. Remember the list: "add the first two", "why the second one?" and critiques work.
+    track_ids = []
+    for track in tracks:
+        track_ids.append(track.track_id)
+    show_tracks(state, track_ids, signals_by_id, new_list=True)
 
-    # 6. Resolve Track objects for options_act(tracks)
-    rec_tracks = [services.db.get(tid) for tid in filtered_ids if services.db.get(tid)]
-    return options_act(rec_tracks)
+    title = "Songs that sound like <b>" + describe_track(seed_track) + "</b>:"
+    return Reply(list_text(title, tracks), [options_act(tracks)])
 
 
 def handle_lyrics_search(parsed, state, services):
-    """F2.2 / T8: Lyrics theme search using Qwen3 text embeddings."""
-    theme = parsed.slots.get("theme", "")
-    if not theme:
-        return DialogueAct(
-            intent=Intent("RECOMMEND"),
-            annotations=[Annotation("text", "Please specify a theme for the lyrics search.")],
-        )
+    """F2.2 / T8: songs whose lyrics (Qwen3 vector) are closest to a theme.
 
-    # 1. Encode query
+    "/about leaving home" -> the theme is encoded like a retrieval query,
+    then the 5 nearest lyrics vectors are shown.
+    """
+    theme = parsed.slots.get("theme", "")
+    if theme == "":
+        return Reply("Tell me a theme, for example '/about leaving home'.")
+
+    # 1. Encode the theme with the same model as the lyrics vectors.
     dense_scorer = services.retriever.fusion.scorers["dense"]
     query_vec = dense_scorer.encode_queries([theme])[0]
 
-    # 2. Build exclude set
-    playlist_ids = set(t.track_id if hasattr(t, "track_id") else t for t in state.playlist)
-    exclude = state.shown | playlist_ids
+    # 2. Never show a song again (F1.2), nor one already in the playlist.
+    exclude = set(state.shown)
+    for track_id in state.playlist:
+        exclude.add(track_id)
 
-    # 3. Retrieve matches using exclude_ids
-    matches = services.vectors.nearest("lyrics", query_vec, k=5, exclude_ids=exclude)
+    matches = services.vectors.nearest("lyrics", query_vec, k=NUM_RECOMMENDATIONS,
+                                       exclude_ids=exclude)
 
-    if not matches:
-        return DialogueAct(
-            intent=Intent("RECOMMEND"),
-            annotations=[Annotation("text", f"No tracks found matching the lyrics theme '{theme}'.")],
-        )
+    tracks = []
+    signals_by_id = {}
+    for track_id, score in matches:
+        track = services.db.get(track_id)
+        if track is None:
+            continue
+        tracks.append(track)
+        signals_by_id[track_id] = {"source": "lyrics", "theme": theme, "similarity": float(score)}
 
-    matched_ids = [tid for tid, _ in matches]
-    signals_by_id = {
-        tid: {"source": "lyrics", "theme": theme, "similarity": float(score)}
-        for tid, score in matches
-    }
+    theme_text = html.escape(theme, quote=False)
+    if len(tracks) == 0:
+        return Reply("Sorry, I could not find new songs about '" + theme_text + "'.")
 
-    # 4. Store state
-    show_tracks(state, matched_ids, signals_by_id, new_list=True)
+    # 3. Remember the list, as for sounds like.
+    track_ids = []
+    for track in tracks:
+        track_ids.append(track.track_id)
+    show_tracks(state, track_ids, signals_by_id, new_list=True)
 
-    # 5. Resolve Track objects for options_act(tracks)
-    rec_tracks = [services.db.get(tid) for tid in matched_ids if services.db.get(tid)]
-    return options_act(rec_tracks)
+    title = "Songs whose lyrics are about <b>" + theme_text + "</b>:"
+    return Reply(list_text(title, tracks), [options_act(tracks)])
