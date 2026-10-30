@@ -19,6 +19,7 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
+from .data.media import get_media
 from .data.vectors import TrackVectors
 from .handlers.critique import handle_critique
 from .handlers.explain import handle_explain
@@ -30,7 +31,6 @@ from .handlers.similar import handle_lyrics_search, handle_sounds_like
 from .llm import create_client
 from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
-from musiccrs.data.media import get_media
 
 _INTENT_PLAYLIST = Intent("PLAYLIST")
 
@@ -112,23 +112,26 @@ def create_services(use_llm=True):
 
 
 def playlist_act(state, db):
-    """The whole playlist as one PLAYLIST dialogue act, enriched with Deezer media (T4)."""
+    """The whole playlist as one PLAYLIST dialogue act, for the playlist panel (R1, T4).
+
+    One annotation per track, in playlist order. Its value is JSON text:
+    SlotValueAnnotation("track", '{"id": "e9383e0c-...", "name": "Smells Like Teen Spirit",
+                                   "artist": "Nirvana", "duration_ms": 301920,
+                                   "cover": "https://...jpg", "preview": "https://...mp3"}')
+    cover and preview come from Deezer (get_media, cached by track ID); null when not found.
+    An empty playlist gives an act with no annotations, so the panel shows nothing.
+    """
     annotations = []
     for track_id in state.playlist:
         track = db.get(track_id)
-        if not track:
-            continue
-
-        # Le pasamos el objeto track completo a get_media
-        media_info = get_media(track) or {}
-
+        media = get_media(track)
         track_info = {
             "id": track.track_id,
             "name": track.name,
-            "artist": track.artists[0] if getattr(track, "artists", None) else "Unknown",
-            "duration_ms": getattr(track, "duration_ms", 0),
-            "cover": media_info.get("cover"),
-            "preview": media_info.get("preview"),
+            "artist": track.artists[0],
+            "duration_ms": track.duration_ms,
+            "cover": media["cover"],
+            "preview": media["preview"],
         }
         value = json.dumps(track_info)
         annotations.append(SlotValueAnnotation("track", value))

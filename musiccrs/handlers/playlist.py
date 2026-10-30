@@ -10,8 +10,6 @@ Text replies are HTML (the chat renders them), so names go through html.escape.
 import html
 
 import numpy as np
-import json
-from ..data.media import get_media
 from dialoguekit.core.dialogue_act import DialogueAct
 from dialoguekit.core.intent import Intent
 from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
@@ -73,29 +71,20 @@ def describe_track(track):
     main_artist = html.escape(track.artists[0], quote=False)
     return name + " by " + main_artist
 
-def options_act(tracks):
-    """The shown songs as one OPTIONS dialogue act (for UI buttons and simulator).
 
-    Sends clean option text so DialogueKit renders neat buttons, while fetching media.
+def options_act(tracks):
+    """The shown songs as one OPTIONS dialogue act (for the UI buttons and the simulator).
+
+    Used by R4 here and by R6/R8 in recs.py. One annotation per song, numbered from 1:
+    SlotValueAnnotation("option", "1. Come As You Are — Nirvana")
+    Covers and previews go in a separate MEDIA act (media_act, added by the agent).
     """
     annotations = []
     number = 1
     for track in tracks:
-        artist_name = track.artists[0] if getattr(track, "artists", None) else "Unknown"
-
-        # 1. Intentar consultar Deezer por si se necesita media en la playlist
-        try:
-            get_media(track.name, artist_name)
-        except Exception:
-            pass
-
-        # 2. Texto limpio formateado que DialogueKit pintará dentro del botón
-        button_label = str(number) + ". " + track.name + " — " + artist_name
-
-        # 3. Enviamos únicamente la etiqueta limpia en SlotValueAnnotation
-        annotations.append(SlotValueAnnotation("option", button_label))
+        value = str(number) + ". " + track.name + " — " + track.artists[0]
+        annotations.append(SlotValueAnnotation("option", value))
         number = number + 1
-
     return DialogueAct(intent=_INTENT_OPTIONS, annotations=annotations)
 
 
