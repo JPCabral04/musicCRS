@@ -285,6 +285,24 @@ def handle_sounds_like(parsed, state, services):
 
 ### 4.5 F3 Why this song? — T7, JP (`handlers/explain.py`)
 
+**As built (Oct 30, branch `jp/explain`).** Four template sentences, one per fact found, in this order:
+
+```python
+def found_sentence(signals, db): ...          # by source: recommend (+ "something different"),
+                                              # critique (critique_text + similarity), audio, lyrics
+def retrievers_sentence(signals): ...         # R6 only: "matching the words of your songs (#10), ..."
+def tags_sentence(track, signals, db): ...    # tags shared with base_ids_of(signals), at most 3
+def artist_sentence(track, state, db): ...    # an artist with another song in the playlist
+def explain_track(track_id, state, db): ...   # -> list of sentences (no vectors: similarity is stored)
+```
+
+- `retrieve_with_sources` ranks are counted as `fuse()` sees them: played tracks are left out first, and `same_artist` is not listed when "something different" turns it off. `check_explain` recomputes them from each component list.
+- "The songs it came from" (`base_ids_of`): recommend → `base_ids`, critique → `liked`, audio → `seed_id`, lyrics → none (a theme has no songs, so its explanation has one sentence).
+- The song itself, if added to the playlist after it was shown, is not a reason ("same artist").
+- Only songs of the **last list** can be asked about (`pick_shown`). R8 playlist songs are never in it (R8 empties `last_shown`), so the `playlist` signals are stored but not explained.
+- Asking "why" changes no state: the options stay pending.
+- **Done Oct 30:** `check_explain` 41/41: same 100 IDs as `retrieve()` with and without `same_artist`, real ranks, one song per source (recommend, something different, critique, audio, lyrics), every number outside names and tags is a stored value. 2 ms per explanation. Audio and lyrics use hand-made signals in the §3.3 format until `similar.py` is merged.
+
 ```python
 def explain_track(track_id, state, db, vectors):
     """2-4 sentences, each built from one stored or checked fact. No LLM."""
