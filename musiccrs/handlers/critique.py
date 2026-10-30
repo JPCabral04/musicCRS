@@ -78,18 +78,6 @@ def critique_query(critique, vectors):
     return query / length
 
 
-def add_choice(critique, track_id, add_to, remove_from):
-    """Put a track in critique[add_to] (once) and take it out of critique[remove_from].
-
-    liked = [], disliked = ["id-2"]; add_choice(critique, "id-2", "liked", "disliked")
-        -> liked = ["id-2"], disliked = []   (the user changed their mind)
-    """
-    if track_id not in critique[add_to]:
-        critique[add_to].append(track_id)
-    if track_id in critique[remove_from]:
-        critique[remove_from].remove(track_id)
-
-
 def names_text(track_ids, db):
     """Track names for the reply: one -> "<b>Numb</b> by Linkin Park", two or more joined by ", "."""
     names = []
@@ -146,11 +134,13 @@ def handle_critique(parsed, state, services):
         if disliked_id is None:
             return not_found_reply(slots["dislike"])
 
+    # A liked or disliked song is never on screen again (it is in state.shown), so it
+    # cannot be picked twice: a plain append is enough.
     critique = state.critique
     if liked_id is not None:
-        add_choice(critique, liked_id, "liked", "disliked")
+        critique["liked"].append(liked_id)
     if disliked_id is not None:
-        add_choice(critique, disliked_id, "disliked", "liked")
+        critique["disliked"].append(disliked_id)
 
     query = critique_query(critique, services.vectors)
     if query is None:
