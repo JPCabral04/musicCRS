@@ -19,7 +19,7 @@ from dialoguekit.platforms import FlaskSocketPlatform
 from retrieval.final_retriever import FinalRetriever
 
 from .data.db import TrackDB
-from .data.media import get_media
+from .data.media import get_media, media_act
 from .data.vectors import TrackVectors
 from .handlers.critique import handle_critique
 from .handlers.explain import handle_explain
@@ -183,7 +183,8 @@ class MusicCRS(Agent):
     def receive_utterance(self, utterance: Utterance) -> None:
         """Gets called each time there is a new user utterance.
 
-        parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed.
+        parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed
+        + a MEDIA act if the reply shows options.
         """
         # Start the clock: the time printed at the end covers the whole turn.
         start = time.perf_counter()
@@ -213,6 +214,15 @@ class MusicCRS(Agent):
         playlist_changed = self.state.playlist != playlist_before
         if playlist_changed or parsed.name == "SHOW":
             dialogue_acts.append(playlist_act(self.state, self.services.db))
+
+        # 5. A reply with option buttons also gets their covers and previews (chat cards).
+        # Every handler that sends OPTIONS has just put the same songs in pending_options.
+        shows_options = False
+        for act in reply.dialogue_acts:
+            if str(act.intent) == "OPTIONS":
+                shows_options = True
+        if shows_options:
+            dialogue_acts.append(media_act(self.state.pending_options, self.services.db))
 
         self._dialogue_connector.register_agent_utterance(
             AnnotatedUtterance(

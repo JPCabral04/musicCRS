@@ -1,129 +1,117 @@
-import urllib.request
-import urllib.parse
+"""Album covers and 30-second previews from the Deezer search API (Part 4, T2).
+
+    python -m musiccrs.data.media    # prints the cover and preview of Smells Like Teen Spirit
+
+No API key is needed. Each track is looked up at most once per server run (cached by track ID).
+"""
 import json
+import time
+import urllib.parse
+import urllib.request
+
 from dialoguekit.core.dialogue_act import DialogueAct
 from dialoguekit.core.intent import Intent
-from dialoguekit.core.annotation import Annotation
+from dialoguekit.core.slot_value_annotation import SlotValueAnnotation
 
-# In-memory cache to store resolved track media: track_key -> {"cover": str|None, "preview": str|None}
+_INTENT_MEDIA = Intent("MEDIA")
+
+# Seconds to wait for one Deezer answer.
+TIMEOUT_S = 2.0
+
+# Seconds one media_act may spend on Deezer: the reply must come back within 3-5 s.
+# Tracks left after that get no cover in this reply (they are looked up next time).
+MEDIA_BUDGET_S = 2.0
+
+# Track ID -> {"cover": url or None, "preview": url or None}.
 _MEDIA_CACHE = {}
 
 
-def get_media(track, artist_or_catalog=None):
-    """Retrieves cover image and 30-second audio preview URL for a track using Deezer API.
+def search_deezer(query):
+    """The first Deezer hit for a search text, or None (no hit, no network, a timeout).
 
-    Supports calling either:
-      - get_media(track_obj)
-      - get_media("Song Title", "Artist Name")
+    "Nirvana Smells Like Teen Spirit" -> {"album": {"cover_medium": "https://..."},
+                                          "preview": "https://...mp3", ...}
     """
-    if track is None:
-        return {"cover": None, "preview": None}
+    url = "https://api.deezer.com/search?q=" + urllib.parse.quote(query)
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        # OSError covers no network and timeouts; ValueError a broken JSON answer.
+        return None
+    hits = data.get("data", [])
+    if len(hits) == 0:
+        return None
+    return hits[0]
 
-    # Handle string inputs: get_media("Rockabye", "Clean Bandit")
-    if isinstance(track, str):
-        track_name = track
-        artist_name = artist_or_catalog if isinstance(artist_or_catalog, str) else ""
-        track_id = f"{track_name.lower()}_{artist_name.lower()}"
-        catalog = None
-    else:
-        # Handle Track object or dict
-        catalog = artist_or_catalog if not isinstance(artist_or_catalog, str) else None
-        track_id = getattr(track, "track_id", None) or (track.get("id") or track.get("track_id") if isinstance(track, dict) else None)
-        
-        if isinstance(track, dict):
-            track_name = track.get("name", "")
-            artists = track.get("artists", [])
-        else:
-            track_name = getattr(track, "name", "")
-            artists = getattr(track, "artists", [])
-        artist_name = artists[0] if (artists and len(artists) > 0) else ""
 
-    if track_id and track_id in _MEDIA_CACHE:
-        return _MEDIA_CACHE[track_id]
+def get_media(track):
+    """Cover and preview URLs of a catalog track, from Deezer.
+
+    Smells Like Teen Spirit (Nirvana) -> {"cover": "https://...jpg", "preview": "https://...mp3"}
+    Not found -> {"cover": None, "preview": None}
+    """
+    if track.track_id in _MEDIA_CACHE:
+        return _MEDIA_CACHE[track.track_id]
+
+    # "Smells Like Teen Spirit - Remastered (2021)" -> "Smells Like Teen Spirit"
+    title = track.name.split(" - ")[0]
+    title = title.split(" (")[0].strip()
 
     media = {"cover": None, "preview": None}
+    # Artist and title first; the title alone when Deezer finds nothing with the artist.
+    queries = [track.artists[0] + " " + title, title]
+    for query in queries:
+        hit = search_deezer(query)
+        if hit is None:
+            continue
+        media["cover"] = hit.get("album", {}).get("cover_medium")
+        media["preview"] = hit.get("preview")
+        if media["preview"]:
+            break
 
-    # 1. Try ISRC lookup if available in catalog
-    isrc = None
-    if catalog and hasattr(catalog, "metadata_dict") and track_id and track_id in catalog.metadata_dict:
-        meta = catalog.metadata_dict[track_id]
-        isrc = meta.get("isrc") or meta.get("ISRC")
-
-    if isrc:
-        try:
-            url = f"https://api.deezer.com/track/isrc:{isrc}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if "id" in data:
-                    media["cover"] = data.get("album", {}).get("cover_medium")
-                    media["preview"] = data.get("preview")
-        except Exception:
-            pass
-
-    # 2. Fallback: Search Deezer with clean search terms
-    if not media["preview"] and track_name:
-        clean_title = track_name.split(" - ")[0].split(" (")[0].strip()
-        
-        queries = []
-        if artist_name:
-            queries.append(f"{artist_name} {clean_title}")
-        queries.append(clean_title)
-
-        for q in queries:
-            try:
-                encoded_query = urllib.parse.quote(q)
-                url = f"https://api.deezer.com/search?q={encoded_query}"
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                
-                with urllib.request.urlopen(req, timeout=2.0) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    hits = data.get("data", [])
-                    if hits:
-                        first_hit = hits[0]
-                        media["cover"] = media["cover"] or first_hit.get("album", {}).get("cover_medium")
-                        media["preview"] = first_hit.get("preview")
-                        if media["preview"]:
-                            break
-            except Exception:
-                pass
-
-    if track_id:
-        _MEDIA_CACHE[track_id] = media
-
+    _MEDIA_CACHE[track.track_id] = media
     return media
 
 
-def media_act(track_ids, db, catalog=None):
-    """Creates a DialogueAct with intent MEDIA containing cover and preview URLs for a list of tracks."""
-    annotations = []
-    for tid in track_ids:
-        track = db.get(tid)
-        if track:
-            media = get_media(track, catalog)
-            payload = {
-                "id": tid,
-                "name": getattr(track, "name", "Unknown"),
-                "artist": getattr(track, "artists", ["Unknown"])[0] if getattr(track, "artists", None) else "Unknown",
-                "cover": media["cover"],
-                "preview": media["preview"],
-            }
-            anno = Annotation("track", json.dumps(payload))
-            anno.slot = "track"
-            anno.slot_address = "track"
-            annotations.append(anno)
+def media_act(track_ids, db):
+    """Cover and preview of each shown song, as one MEDIA dialogue act (chat cards, T4).
 
-    return DialogueAct(intent=Intent("MEDIA"), annotations=annotations)
+    One annotation per song, in the order shown. Its value is JSON text:
+    SlotValueAnnotation("track", '{"id": "e9383e0c-...", "name": "Smells Like Teen Spirit",
+                                   "artist": "Nirvana", "cover": "https://...jpg",
+                                   "preview": "https://...mp3"}')
+    Lookups are one after the other (no parallel requests) and stop after MEDIA_BUDGET_S.
+    """
+    start = time.perf_counter()
+    annotations = []
+    for track_id in track_ids:
+        track = db.get(track_id)
+        seconds = time.perf_counter() - start
+        if track_id in _MEDIA_CACHE or seconds < MEDIA_BUDGET_S:
+            media = get_media(track)
+        else:
+            media = {"cover": None, "preview": None}
+        track_info = {
+            "id": track_id,
+            "name": track.name,
+            "artist": track.artists[0],
+            "cover": media["cover"],
+            "preview": media["preview"],
+        }
+        annotations.append(SlotValueAnnotation("track", json.dumps(track_info)))
+    return DialogueAct(intent=_INTENT_MEDIA, annotations=annotations)
 
 
 if __name__ == "__main__":
-    from musiccrs.data.db import TrackDB
-    db = TrackDB("cache/musiccrs.db")
-    print("=== Testing Deezer Media Lookup (T2) ===")
-    sample_tracks = db.find_by_name("Smells Like Teen Spirit")
-    if sample_tracks:
-        t = sample_tracks[0]
-        res = get_media(t)
-        print(f"Track: {t.name} — Artist: {t.artists[0] if t.artists else 'Unknown'}")
-        print(f"Cover URL:   {res['cover']}")
-        print(f"Preview URL: {res['preview']}")
+    from .db import TrackDB
+
+    db = TrackDB()
+    track = db.find_by_name("smells like teen spirit", "nirvana")[0]
+    start = time.perf_counter()
+    media = get_media(track)
+    ms = round((time.perf_counter() - start) * 1000)
+    print(track.name + " by " + track.artists[0] + " (" + str(ms) + " ms)")
+    print("Cover:   " + str(media["cover"]))
+    print("Preview: " + str(media["preview"]))
