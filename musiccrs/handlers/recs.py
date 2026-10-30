@@ -257,14 +257,16 @@ def handle_recommend(parsed, state, services):
     if different:
         # Same-artist list off, then the base songs' artists are left out of the result.
         policy = SessionPolicy(use_same_artist=False)
-        candidate_ids = services.retriever.retrieve(ctx, NUM_CANDIDATES_DIFFERENT, policy)
+        candidate_ids, sources = services.retriever.retrieve_with_sources(
+            ctx, NUM_CANDIDATES_DIFFERENT, policy)
         candidate_ids = drop_playlist_artists(candidate_ids, base_ids, services.db,
                                               NUM_CANDIDATES_DIFFERENT)
         max_per_artist = MAX_PER_ARTIST
     else:
         # Default policy: the base songs themselves are never recommended.
         policy = SessionPolicy()
-        candidate_ids = services.retriever.retrieve(ctx, NUM_CANDIDATES, policy)
+        candidate_ids, sources = services.retriever.retrieve_with_sources(
+            ctx, NUM_CANDIDATES, policy)
         max_per_artist = per_artist_limit(base_ids, services.db)
 
     # Songs already in the playlist are never recommended, whatever the base was.
@@ -285,7 +287,11 @@ def handle_recommend(parsed, state, services):
     # (F1.2), and why it was shown (F3). base_ids is copied: it may be the playlist itself,
     # which changes later.
     signals = {"source": "recommend", "base_ids": list(base_ids), "different": different}
-    show_tracks(state, track_ids, same_signals(track_ids, signals))
+    signals_by_id = same_signals(track_ids, signals)
+    # Which Part 1 retrievers ranked each song, and where (F3): {"bm25_plus": 3, "bpr_sim": 12}.
+    for track_id in track_ids:
+        signals_by_id[track_id]["retrievers"] = sources[track_id]
+    show_tracks(state, track_ids, signals_by_id)
 
     # What the songs are like: the named song, the named artist, or the playlist.
     if named_seed and "track" in parsed.slots:

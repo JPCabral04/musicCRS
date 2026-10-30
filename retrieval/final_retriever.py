@@ -18,7 +18,7 @@ import time
 
 from .base import RetrievalModule
 from .context import SessionPolicy, TurnContext, finalize_top_k, iter_turn_contexts
-from .methods.fusion import build_fusion
+from .methods.fusion import DEPTH, build_fusion, fuse
 from .experiments.run_experiment import FOLDS, check_predictions, sessions_for
 
 
@@ -34,6 +34,43 @@ class FinalRetriever(RetrievalModule):
         """Top-k track IDs for one turn. Part 1 uses the default policy; the Part 2 agent passes its own."""
         ranked = self.fusion.score(ctx, policy=policy)
         return finalize_top_k(ranked, ctx.played_track_ids, topk, policy.exclude_played)
+
+    def retrieve_with_sources(self, ctx: TurnContext, topk: int = 20,
+                              policy: SessionPolicy = SessionPolicy()):
+        """retrieve(), plus where each returned track was in every component list (Part 4, F3).
+
+        -> (["id-a", "id-b"], {"id-a": {"bm25_plus": 3, "bpr_sim": 1}, "id-b": {"same_artist": 2}})
+        The same lists and the same fuse() as FusionScorer.score, so the IDs are those of retrieve().
+        Ranks are counted as fuse() sees them: played tracks are left out first (unless the
+        policy keeps them), and same_artist is not listed when the policy turns it off.
+        """
+        lists = {}
+        for name, scorer in self.fusion.scorers.items():
+            lists[name] = scorer.score(ctx, DEPTH)
+        ranked = fuse(lists, ctx.played_track_ids, self.fusion.weights, self.fusion.k_rrf, policy)
+        track_ids = finalize_top_k(ranked, ctx.played_track_ids, topk, policy.exclude_played)
+
+        sources = {}
+        for track_id in track_ids:
+            sources[track_id] = {}
+
+        skip = set()
+        if policy.exclude_played:
+            skip = set(ctx.played_track_ids)
+
+        for name in lists:
+            if name == "same_artist" and not policy.use_same_artist:
+                continue
+            rank = 0
+            for track_id, _ in lists[name]:
+                if track_id in skip:
+                    continue
+                rank = rank + 1
+                # Only the returned tracks, and only their first (best) place in the list.
+                if track_id in sources and name not in sources[track_id]:
+                    sources[track_id][name] = rank
+
+        return track_ids, sources
 
     def text_to_item_retrieval(self, query: str, topk: int) -> list[str]:
         """Treats `query` as the current message of a first turn (no history, no played tracks)."""
