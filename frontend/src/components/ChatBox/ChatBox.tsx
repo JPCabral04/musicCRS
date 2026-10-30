@@ -102,6 +102,7 @@ export default function ChatBox() {
             feedback={config.useFeedback ? giveFeedback : null}
             message={message.text}
             image_url={image_url}
+            dialogue_acts={message.dialogue_acts}
           />
         );
       }

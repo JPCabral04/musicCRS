@@ -1,5 +1,6 @@
 import { MDBIcon } from "mdb-react-ui-kit";
 import Feedback from "./Feedback";
+import { ChatMessageDialogueAct } from "../types";
 
 interface TrackMedia {
   id: string;
@@ -36,38 +37,20 @@ function AgentChatMessage({
   message: string;
   image_url?: string;
   feedback: ((message: string, event: string) => void) | null;
-  dialogue_acts?: any[];
+  dialogue_acts?: ChatMessageDialogueAct[];
 }): JSX.Element {
-  // Extract track media from dialogue acts annotations if present
+  // The MEDIA act (sent with every list of options): one card per song with a cover
+  // or a preview. Each annotation value is JSON text:
+  // {"id": "...", "name": "Numb", "artist": "Linkin Park", "cover": "https://...", "preview": "https://..."}
   const mediaTracks: TrackMedia[] = [];
-
-  if (dialogue_acts && Array.isArray(dialogue_acts)) {
-    dialogue_acts.forEach((act) => {
-      const intentName = act.intent?.name || act.intent?.intent_type || act.intent;
-      const annotations = act.annotations || act.annotation;
-
-      if ((intentName === "MEDIA" || intentName === "RECOMMEND" || intentName === "OPTIONS") && Array.isArray(annotations)) {
-        annotations.forEach((anno) => {
-          const slot = anno.slot || anno.slot_type || anno.slot_address;
-          if (slot === "track" || slot === "TRACK") {
-            try {
-              const data = typeof anno.value === "string" ? JSON.parse(anno.value) : anno.value;
-              if (data && data.id && (data.cover || data.preview)) {
-                mediaTracks.push({
-                  id: data.id,
-                  name: data.name || "Unknown Track",
-                  artist: data.artist || "Unknown Artist",
-                  cover: data.cover,
-                  preview: data.preview,
-                });
-              }
-            } catch (e) {
-              // Annotation is plain text or non-JSON
-            }
-          }
-        });
+  const mediaAct = dialogue_acts?.find((act) => act.intent === "MEDIA");
+  if (mediaAct && mediaAct.annotations) {
+    for (const annotation of mediaAct.annotations) {
+      const track: TrackMedia = JSON.parse(annotation.value);
+      if (track.cover || track.preview) {
+        mediaTracks.push(track);
       }
-    });
+    }
   }
 
   return (

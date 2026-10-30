@@ -21,6 +21,18 @@ Our MusicCRS manages a playlist and recommends songs in natural language (R1–R
 
 Setup, start, the demo script (one line per requirement) and the checks: [docs/part2_demo.md](docs/part2_demo.md).
 
+## Part 4: advanced features
+
+Built on the Part 2 agent, each with a slash command (no LLM) and a natural-language form:
+
+- **Critiques (F1):** "more like the second one", "less like the one by Bon Jovi" move the list in the audio space; "older", "more popular", "more acoustic", "no rap" filter it. Critiques add up until a new list starts.
+- **Sounds like (F2.1):** "songs that sound like Smells Like Teen Spirit": nearest songs by their audio (CLAP) vectors.
+- **Lyrics themes (F2.2):** "songs about leaving home": nearest songs by their lyrics (Qwen3) vectors, placeholder vectors left out.
+- **Covers and previews:** album art and a 30-second preview (Deezer) for every song in the playlist panel and in the chat lists.
+- **Audio evaluation (F5b):** over 1,000 seeds (seed's artist left out), the 5 nearest songs by audio share 3.61 tags with the seed on average, by metadata text 2.31, random songs 1.49 (`python -m musiccrs.checks.eval_audio`).
+
+What to type, the expected replies and the checks: [docs/part4_demo.md](docs/part4_demo.md).
+
 ## Backend (Conversational Agent)
 
 The code for the conversational agent is found under the [musiccrs](musiccrs/) folder. It is based on the [DialogueKit](https://github.com/iai-group/DialogueKit) toolkit and assumes **Python 3.11**.

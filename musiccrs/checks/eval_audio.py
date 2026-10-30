@@ -1,96 +1,103 @@
-"""T10 F5b: Offline evaluation of audio representations.
+"""Offline evaluation of the audio vectors (Part 4, T10 F5b): do songs that sound alike share tags?
 
-Compares audio neighbours against text neighbours and random baselines
-using metadata properties (artist overlap).
+Run from the repo root (no API key, no retriever; about 1 min):
+    python -m musiccrs.checks.eval_audio
+
+For 1,000 random tracks with an audio vector (seed 42), take three groups of 5 tracks:
+- audio:    the 5 nearest in the CLAP audio space;
+- metadata: the 5 nearest in the metadata (Qwen3 text) space, the F5b baseline;
+- random:   5 random tracks.
+Every group leaves out the seed's own artist: same-artist tracks share tags trivially,
+and the metadata text contains the artist name, which would favour the metadata space.
+Prints the mean number of tags (lower case) a neighbour shares with its seed.
+Expected: random < audio. Audio vs metadata tells whether sound agrees with tags.
 """
-
 import random
-from retrieval.final_retriever import FinalRetriever
+
+from retrieval.data_loader import MusicCatalogLoader
+from retrieval.methods.dense import DEFAULT_FIELD, load_track_matrix
+
 from ..data.db import TrackDB
 from ..data.vectors import TrackVectors
+from ..handlers.critique import lower_tags
+
+NUM_SEEDS = 1000
+NUM_NEIGHBOURS = 5
+SEED = 42
 
 
-def run_eval(sample_size=50, top_k=5):
-    """Runs T10 evaluation comparing audio, text, and random neighbours."""
-    print("=== T10 Evaluation: Audio vs Text vs Random Neighbours ===")
+def shared_tags(seed_track, track_ids, db):
+    """The number of tags each track shares with the seed, added up.
 
+    seed tags {"grunge", "rock", "90s"}, one track with {"rock", "90s", "pop"} -> 2
+    """
+    seed_tags = lower_tags(seed_track)
+    total = 0
+    for track_id in track_ids:
+        tags = lower_tags(db.get(track_id))
+        total = total + len(seed_tags & tags)
+    return total
+
+
+def random_tracks(rng, track_ids, exclude, count):
+    """count random track IDs, none of them in exclude."""
+    picked = []
+    while len(picked) < count:
+        track_id = rng.choice(track_ids)
+        if track_id not in exclude and track_id not in picked:
+            picked.append(track_id)
+    return picked
+
+
+def ids_of(results):
+    """[(track_id, score), ...] -> [track_id, ...]"""
+    track_ids = []
+    for track_id, score in results:
+        track_ids.append(track_id)
+    return track_ids
+
+
+def main():
+    # The same track order and metadata matrix the dense scorer uses.
+    track_ids = list(MusicCatalogLoader().metadata_dict)
+    metadata_matrix, metadata_has_vector = load_track_matrix(DEFAULT_FIELD, track_ids)
+    vectors = TrackVectors(track_ids, metadata_matrix, metadata_has_vector)
     db = TrackDB()
 
-    print("Loading retriever and track vectors...")
-    retriever = FinalRetriever()
-    scorers = retriever.fusion.scorers
-    dense = scorers["dense"]
+    # Seeds: tracks with both an audio and a metadata vector, so the groups compare fairly.
+    candidates = []
+    for row in range(len(track_ids)):
+        if vectors.usable["audio"][row] and vectors.usable["metadata"][row]:
+            candidates.append(track_ids[row])
+    rng = random.Random(SEED)
+    seeds = rng.sample(candidates, NUM_SEEDS)
 
-    # Instanciamos TrackVectors
-    vectors = TrackVectors(dense.track_ids, dense.matrix, dense.has_vector)
+    totals = {"audio": 0, "metadata": 0, "random": 0}
+    for seed_id in seeds:
+        seed_track = db.get(seed_id)
 
-    num_tracks = len(vectors.track_ids)
+        # Leave out the seed and every track by its main artist.
+        exclude = {seed_id}
+        for track in db.artist_tracks(seed_track.artists[0]):
+            exclude.add(track.track_id)
 
-    # v.usable["audio"] contiene la máscara booleana por fila
-    audio_usable_mask = vectors.usable.get("audio", [])
+        audio = vectors.nearest("audio", vectors.vector("audio", seed_id),
+                                NUM_NEIGHBOURS, exclude)
+        metadata = vectors.nearest("metadata", vectors.vector("metadata", seed_id),
+                                   NUM_NEIGHBOURS, exclude)
+        others = random_tracks(rng, candidates, exclude, NUM_NEIGHBOURS)
 
-    # Filtrar filas (índices) que tengan vector de audio disponible
-    valid_rows = [
-        row for row in range(num_tracks) if row < len(audio_usable_mask) and audio_usable_mask[row]
-    ]
+        totals["audio"] = totals["audio"] + shared_tags(seed_track, ids_of(audio), db)
+        totals["metadata"] = totals["metadata"] + shared_tags(seed_track, ids_of(metadata), db)
+        totals["random"] = totals["random"] + shared_tags(seed_track, others, db)
 
-    if not valid_rows:
-        print("[Error] No valid audio vectors found in vectors.usable['audio'].")
-        return
-
-    random.seed(42)
-    eval_rows = random.sample(valid_rows, min(sample_size, len(valid_rows)))
-
-    audio_artist_matches = 0
-    metadata_artist_matches = 0
-    random_artist_matches = 0
-    total_comparisons = len(eval_rows) * top_k
-
-    for row in eval_rows:
-        query_tid = vectors.track_ids[row]
-        query_track = db.get(query_tid)
-        if not query_track or not query_track.artists:
-            continue
-
-        query_artist = query_track.artists[0].lower()
-        exclude_set = {query_tid}
-
-        # 1. Audio Neighbours (CLAP)
-        try:
-            query_audio_vec = vectors.matrices["audio"][row]
-            audio_nearest = vectors.nearest("audio", query_audio_vec, top_k, exclude_set)
-            for n_tid, _ in audio_nearest:
-                n_track = db.get(n_tid)
-                if n_track and n_track.artists and n_track.artists[0].lower() == query_artist:
-                    audio_artist_matches += 1
-        except Exception as e:
-            print(f"[Warning] Error evaluating audio nearest for row {row}: {e}")
-
-        # 2. Metadata / Dense Text Neighbours
-        try:
-            query_meta_vec = vectors.matrices["metadata"][row]
-            metadata_nearest = vectors.nearest("metadata", query_meta_vec, top_k, exclude_set)
-            for n_tid, _ in metadata_nearest:
-                n_track = db.get(n_tid)
-                if n_track and n_track.artists and n_track.artists[0].lower() == query_artist:
-                    metadata_artist_matches += 1
-        except Exception as e:
-            print(f"[Warning] Error evaluating metadata nearest for row {row}: {e}")
-
-        # 3. Random Baseline
-        rand_rows = random.sample([r for r in range(num_tracks) if r != row], top_k)
-        for n_row in rand_rows:
-            n_tid = vectors.track_ids[n_row]
-            n_track = db.get(n_tid)
-            if n_track and n_track.artists and n_track.artists[0].lower() == query_artist:
-                random_artist_matches += 1
-
-    # Resultados T10
-    print(f"\nResults over {len(eval_rows)} query tracks (Top-{top_k} neighbours):")
-    print(f"  • Same-Artist Overlap (Audio / CLAP):   {audio_artist_matches / total_comparisons * 100:.2f}%")
-    print(f"  • Same-Artist Overlap (Text/Metadata): {metadata_artist_matches / total_comparisons * 100:.2f}%")
-    print(f"  • Same-Artist Overlap (Random):        {random_artist_matches / total_comparisons * 100:.2f}%\n")
+    pairs = NUM_SEEDS * NUM_NEIGHBOURS
+    print("Mean tags shared with the seed (" + str(NUM_SEEDS) + " seeds x "
+          + str(NUM_NEIGHBOURS) + " tracks, seed's artist left out):")
+    for group in ["audio", "metadata", "random"]:
+        mean = totals[group] / pairs
+        print("  " + group.ljust(9) + str(round(mean, 3)))
 
 
 if __name__ == "__main__":
-    run_eval()
+    main()
