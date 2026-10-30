@@ -40,6 +40,9 @@ SLASH_COMMANDS = [
     ("/why", "EXPLAIN", {}),
 ]
 
+# Intents whose handler cannot run without services (no DB, no vectors here).
+NEEDS_SERVICES = {"SOUNDS_LIKE", "LYRICS_SEARCH"}
+
 # Five catalog songs used as a shown list: (track, artist).
 SHOWN_SONGS = [
     ("numb", "linkin park"),
@@ -67,6 +70,9 @@ def check_slash_commands():
         check(parsed.name == intent and parsed.slots == slots,
               text + " -> " + intent + " " + str(slots))
         check(parsed.name in HANDLERS, text + " has a handler")
+        # These search the DB and the vectors, so they are run by check_similar instead.
+        if parsed.name in NEEDS_SERVICES:
+            continue
         reply = HANDLERS[parsed.name](parsed, DialogueState(), None)
         check(reply.text != "", text + " gets a reply")
 
