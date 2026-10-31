@@ -29,6 +29,8 @@ Built on the Part 2 agent, each with a slash command (no LLM) and a natural-lang
 - **Sounds like (F2.1):** "songs that sound like Smells Like Teen Spirit": nearest songs by their audio (CLAP) vectors.
 - **Lyrics themes (F2.2):** "songs about leaving home": nearest songs by their lyrics (Qwen3) vectors, placeholder vectors left out.
 - **Covers and previews:** album art and a 30-second preview (Deezer) for every song in the playlist panel and in the chat lists.
+- **Critique evaluation (F5a):** on the 1,000 `val0` conversations (a training fold), at turn 8 a simulated user who knows the real next song says "more like #k" for the shown song that sounds closest to it. In 180 turns the song was already among the 5 shown; on the other 820, nDCG@20 is 0.143 for the retriever's next 20 songs, 0.046 after "more like #k" (the song moves up in 6.3 % of turns, down in 31.2 %) and 0.075 when the user also says "older" / "newer" and "more" / "less popular" when true (up 12.1 %, down 29.6 %). Moving in the audio space alone loses the conversation's words that the retriever uses; the attribute critiques win part of it back (`python -m musiccrs.checks.eval_critique`).
+- **Latency and LLM-call log (F5):** the backend prints `[CRITIQUE] 412 ms, 1 LLM call` after every turn; `python -m musiccrs.checks.check_latency` runs a 31-turn conversation (Part 2 and Part 4) and prints the median and 95th-percentile ms and the LLM calls per turn.
 - **Audio evaluation (F5b):** over 1,000 seeds (seed's artist left out), the 5 nearest songs by audio share 3.61 tags with the seed on average, by metadata text 2.31, random songs 1.49 (`python -m musiccrs.checks.eval_audio`).
 
 What to type, the expected replies and the checks: [docs/part4_demo.md](docs/part4_demo.md).

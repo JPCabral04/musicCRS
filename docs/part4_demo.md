@@ -179,6 +179,20 @@ On the same rock playlist:
 
 The "why" options stay pending, so "add the second one" still works afterwards.
 
+### Evaluation and turn log (T9, F5a)
+
+Nothing new to type in the chat. Every turn now prints its time **and its LLM calls** in the
+backend terminal:
+
+| Type in the chat | Backend terminal |
+| --- | --- |
+| `/recommend` | `[RECOMMEND] ... ms, 0 LLM calls` (slash command: no LLM) |
+| "more like the second one" | `[CRITIQUE] ... ms, 1 LLM call` (the parser) |
+| "add all except the one by Bon Jovi" | `[SELECT] ... ms, 2 LLM calls` (parser + selection) |
+
+The ms vary; the call counts do not. The critique evaluation and the latency check are in §3
+(`eval_critique`, `check_latency`).
+
 ---
 
 ## 3. Command-line checks
@@ -193,6 +207,8 @@ python -m musiccrs.checks.check_similar  # T6 + T8: 27 checks of sounds like and
 python -m musiccrs.checks.check_lyrics   # T8: missing and placeholder lyrics vectors (~10 s)
 python -m musiccrs.checks.eval_audio     # T10 F5b: tags shared with 1,000 seeds, audio vs metadata vs random (~25 s)
 python -m musiccrs.checks.check_explain  # T7: 41 checks, one song per source, numbers traced to stored values (no key, ~1 min)
+python -m musiccrs.checks.eval_critique  # T9 F5a: simulated critiques on 1,000 val0 conversations (no key, ~5 min; --limit 200 for a quicker run)
+python -m musiccrs.checks.check_latency  # T9: 31 scripted turns, ms and LLM calls per turn (needs the key)
 ```
 
 Expected output (Oct 29):
@@ -251,3 +267,20 @@ Expected output (Oct 29):
   then each explanation (lines starting with `|`) followed by `ok` lines such as
   `ok    every number is stored (found ['1996', '0.91'], not stored [])`, then 4 edge cases,
   `ms per explanation: median 1.7, max 2.3` and `OK: every check passed.`
+- `eval_critique` (Oct 31, all 1,000 val0 sessions, turn 8):
+  ```
+  gold already among the 5 shown (accepted, skipped): 180
+  gold or shown songs without an audio vector (skipped): 0
+  evaluated: 820 (806 with at least one true attribute critique)
+
+  list                                nDCG@20       up     down     same
+  no critique (retriever, 6-25)        0.1429
+  more like #k                         0.0455    6.3 %   31.2 %   62.4 %
+  more like #k + year / popularity     0.0754   12.1 %   29.6 %   58.3 %
+  ```
+  The critique alone moves the list toward songs that *sound* like #k, but loses the words of
+  the conversation that the retriever matches; true attribute critiques win part of it back.
+- `check_latency`: each turn as `[CRITIQUE] ... ms, 1 LLM call, playlist 6: More like ...`,
+  then mean and max ms per intent, then `All 31 turns: median ... ms, 95th percentile ... ms`,
+  `LLM calls: ... per turn, max ... in one turn` and `OK: 31 turns, every one under 3000 ms
+  and at most 3 LLM calls, ...`.
