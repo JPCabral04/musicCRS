@@ -19,6 +19,11 @@ LLM_TIMEOUT_SECONDS = 5
 # Sent when the model's answer had no valid JSON, before the second (last) call.
 RETRY_MESSAGE = "That was not valid JSON. Answer again with the JSON object only."
 
+# How many calls ask_json has sent to the LLM (Part 4, F5). Every LLM call of the agent
+# goes through ask_json, so this counts them all. receive_utterance and check_latency
+# set it back to 0 at the start of a turn and read it at the end.
+call_count = 0
+
 
 def create_client():
     """An OpenAI client for the course LLM, or None when LLM_API_KEY is not set.
@@ -74,11 +79,18 @@ def ask_json(llm, messages):
     Temperature 0, so the same message always gets the same answer.
     No valid JSON -> the model sees its answer and is asked once more (2 calls at most).
     Still no JSON, or a network/API error -> None, so the agent never crashes on the LLM.
+    Each call sent adds 1 to call_count (a retry counts as a second call).
     """
+    # call_count lives in this module, outside the function: "global" lets the
+    # function change it instead of making a new local variable.
+    global call_count
+
     # A copy, so the retry messages are not added to the caller's list.
     current_messages = list(messages)
 
     for call_number in range(2):
+        # Counted before the call: a call that fails or times out was still sent.
+        call_count = call_count + 1
         try:
             response = llm.chat.completions.create(
                 model=LLM_MODEL,
