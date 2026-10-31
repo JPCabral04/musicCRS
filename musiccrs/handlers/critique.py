@@ -227,6 +227,27 @@ def filter_text(one_filter):
     return "not tagged " + value
 
 
+def critique_ranking(query, filters, exclude_ids, vectors, db, count):
+    """The `count` tracks nearest to the critique query that pass every filter, best first,
+    as [(track_id, cosine), ...]. Fewer when the filters leave fewer in the POOL_SIZE nearest.
+
+    The agent asks for 5 (handle_critique); eval_critique asks for 20, so the evaluation
+    ranks with exactly the agent's code.
+    (query near It's My Life, [year less 1994], {shown IDs}, vectors, db, 5)
+        -> [("id-a", 0.91), ("id-b", 0.90), ...]: 5 tracks released before 1994
+    """
+    results = vectors.nearest(SPACE, query, POOL_SIZE, exclude_ids)
+    ranked = []
+    for track_id, score in results:
+        if len(ranked) == count:
+            break
+        track = db.get(track_id)
+        if not passes_filters(track, filters):
+            continue
+        ranked.append((track_id, score))
+    return ranked
+
+
 def handle_critique(parsed, state, services):
     """CRITIQUE (F1): add the like / dislike (F1.1) and the attribute filter (F1.2) to the
     critique session, rank again with the Rocchio query, show the 5 nearest tracks that
@@ -285,19 +306,15 @@ def handle_critique(parsed, state, services):
     for track_id in state.playlist:
         exclude_ids.add(track_id)
 
-    # The nearest tracks that pass every filter, best first (no filters: the 5 nearest).
-    results = services.vectors.nearest(SPACE, query, POOL_SIZE, exclude_ids)
+    # The 5 nearest tracks that pass every filter, best first (no filters: the 5 nearest).
+    ranked = critique_ranking(query, critique["filters"], exclude_ids, services.vectors,
+                              services.db, NUM_RECOMMENDATIONS)
     track_ids = []
     tracks = []
     scores = []
-    for track_id, score in results:
-        if len(track_ids) == NUM_RECOMMENDATIONS:
-            break
-        track = services.db.get(track_id)
-        if not passes_filters(track, critique["filters"]):
-            continue
+    for track_id, score in ranked:
         track_ids.append(track_id)
-        tracks.append(track)
+        tracks.append(services.db.get(track_id))
         scores.append(score)
 
     filters_text = filters_list_text(critique["filters"])
