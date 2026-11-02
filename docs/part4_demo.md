@@ -3,7 +3,9 @@
 How to show each Part 4 feature live: the lines to type, the reply that comes back, and where
 it happens in the code. Each feature has a slash command (rules, no LLM) and a
 natural-language form (one LLM call, the parser); both end in the same intent and the same
-handler. Setup, the LLM key and the Part 2 demo are in `part2_demo.md`.
+handler. Setup, the LLM key and the Part 2 demo are in `part2_demo.md`. The same text cut down to
+one person's tasks: `part4_demo_jp.md` (T1, T3, T5, T7, T9) and `part4_demo_alejandro.md`
+(T2, T4, T6, T8, T10).
 
 All commands are for **Git Bash**, from the **repo root**. Every reply below was checked on
 Nov 2 by running the slash commands from a fresh conversation.
