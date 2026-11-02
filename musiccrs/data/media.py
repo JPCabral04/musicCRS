@@ -2,7 +2,7 @@
 
     python -m musiccrs.data.media    # prints the cover and preview of Smells Like Teen Spirit
 
-No API key is needed. Each track is looked up at most once per server run (cached by track ID).
+No API key is needed. Each track is looked up at most once every CACHE_TTL_S (cached by track ID).
 """
 import json
 import time
@@ -22,8 +22,21 @@ TIMEOUT_S = 2.0
 # Tracks left after that get no cover in this reply (they are looked up next time).
 MEDIA_BUDGET_S = 2.0
 
-# Track ID -> {"cover": url or None, "preview": url or None}.
+# Deezer preview links are signed and stop working about 15 minutes after the search
+# ("...mp3?hdnea=exp=1793643318~..." -> HTTP 403 after that time), so a cached answer is
+# looked up again after 10 minutes. 5 minutes of margin are left for the user to press play.
+CACHE_TTL_S = 600
+
+# Track ID -> {"cover": url or None, "preview": url or None, "fetched_at": time.time()}.
 _MEDIA_CACHE = {}
+
+
+def is_cached(track_id):
+    """True when the track was looked up less than CACHE_TTL_S seconds ago."""
+    if track_id not in _MEDIA_CACHE:
+        return False
+    age_s = time.time() - _MEDIA_CACHE[track_id]["fetched_at"]
+    return age_s < CACHE_TTL_S
 
 
 def search_deezer(query):
@@ -52,7 +65,7 @@ def get_media(track):
     Smells Like Teen Spirit (Nirvana) -> {"cover": "https://...jpg", "preview": "https://...mp3"}
     Not found -> {"cover": None, "preview": None}
     """
-    if track.track_id in _MEDIA_CACHE:
+    if is_cached(track.track_id):
         return _MEDIA_CACHE[track.track_id]
 
     # "Smells Like Teen Spirit - Remastered (2021)" -> "Smells Like Teen Spirit"
@@ -71,6 +84,7 @@ def get_media(track):
         if media["preview"]:
             break
 
+    media["fetched_at"] = time.time()
     _MEDIA_CACHE[track.track_id] = media
     return media
 
@@ -89,7 +103,7 @@ def media_act(track_ids, db):
     for track_id in track_ids:
         track = db.get(track_id)
         seconds = time.perf_counter() - start
-        if track_id in _MEDIA_CACHE or seconds < MEDIA_BUDGET_S:
+        if is_cached(track_id) or seconds < MEDIA_BUDGET_S:
             media = get_media(track)
         else:
             media = {"cover": None, "preview": None}
