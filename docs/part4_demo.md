@@ -208,7 +208,7 @@ python -m musiccrs.checks.check_lyrics   # T8: missing and placeholder lyrics ve
 python -m musiccrs.checks.eval_audio     # T10 F5b: tags shared with 1,000 seeds, audio vs metadata vs random (~25 s)
 python -m musiccrs.checks.check_explain  # T7: 41 checks, one song per source, numbers traced to stored values (no key, ~1 min)
 python -m musiccrs.checks.eval_critique  # T9 F5a: simulated critiques on 1,000 val0 conversations (no key, ~5 min; --limit 200 for a quicker run)
-python -m musiccrs.checks.check_latency  # T9: 31 scripted turns, ms and LLM calls per turn (needs the key)
+python -m musiccrs.checks.check_latency  # T9: 30 scripted turns, ms and LLM calls per turn (needs the key)
 ```
 
 Expected output (Oct 29):
@@ -280,7 +280,13 @@ Expected output (Oct 29):
   ```
   The critique alone moves the list toward songs that *sound* like #k, but loses the words of
   the conversation that the retriever matches; true attribute critiques win part of it back.
-- `check_latency`: each turn as `[CRITIQUE] ... ms, 1 LLM call, playlist 6: More like ...`,
-  then mean and max ms per intent, then `All 31 turns: median ... ms, 95th percentile ... ms`,
-  `LLM calls: ... per turn, max ... in one turn` and `OK: 31 turns, every one under 3000 ms
-  and at most 3 LLM calls, ...`.
+- `check_latency` (Oct 31): each turn as `[CRITIQUE] 467 ms, 1 LLM call, playlist 6: More like ...`
+  (the SELECT turns "the first one" take 0-1 ms and 0 LLM calls: rules only), then mean and max
+  ms per intent, then:
+  ```
+  All 30 turns: median 595 ms, 95th percentile 1233 ms, max 1309 ms
+  LLM calls: 27 in total, 0.9 per turn, max 2 in one turn
+  OK: 30 turns, every one under 3000 ms and at most 3 LLM calls, with the expected intent and playlist length.
+  ```
+  The slowest turns are LYRICS_SEARCH (1309 ms) and CREATE_PLAYLIST (1233 ms, the only turn
+  with 2 LLM calls). The ms vary from run to run; the call counts do not.
