@@ -28,6 +28,7 @@ from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
 from .handlers.similar import handle_lyrics_search, handle_sounds_like
+from . import llm
 from .llm import create_client
 from .nlu.parser import parse
 from .state import DialogueState, Reply, Services
@@ -79,10 +80,11 @@ def create_services(use_llm=True):
     """Load the heavy objects once, at startup."""
     db = TrackDB()
 
-    llm = None
+    # "client", not "llm": llm is the module that counts the calls (print_turn_time).
+    client = None
     if use_llm:
-        llm = create_client()
-        if llm is None:
+        client = create_client()
+        if client is None:
             print("LLM_API_KEY is not set: the agent runs with slash commands only.")
 
     # The Part 1 retriever (BM25, same artist, BPR, dense): loaded once, it takes seconds.
@@ -108,7 +110,7 @@ def create_services(use_llm=True):
     print("  " + vectors.size_text("audio"))
     print("  " + vectors.size_text("lyrics"))
 
-    return Services(db=db, retriever=retriever, llm=llm, vectors=vectors)
+    return Services(db=db, retriever=retriever, llm=client, vectors=vectors)
 
 
 def playlist_act(state, db):
@@ -138,13 +140,22 @@ def playlist_act(state, db):
     return DialogueAct(intent=_INTENT_PLAYLIST, annotations=annotations)
 
 
-def print_turn_time(intent_name, start):
-    """Print how long one turn took, in the backend terminal (T13 latency check).
+def calls_text(count):
+    """The number of LLM calls in words: 0 -> "0 LLM calls", 1 -> "1 LLM call"."""
+    if count == 1:
+        return "1 LLM call"
+    return str(count) + " LLM calls"
 
-    intent_name="ADD", start 0.812 s ago -> prints "[ADD] 812 ms"
+
+def print_turn_time(intent_name, start):
+    """Print how long one turn took and how many LLM calls it made, in the backend
+    terminal (T13 latency check, Part 4 F5 log).
+
+    intent_name="CRITIQUE", start 0.412 s ago, 1 call -> prints "[CRITIQUE] 412 ms, 1 LLM call"
     """
     milliseconds = (time.perf_counter() - start) * 1000
-    print("[" + intent_name + "] " + str(round(milliseconds)) + " ms")
+    print("[" + intent_name + "] " + str(round(milliseconds)) + " ms, "
+          + calls_text(llm.call_count))
 
 
 class MusicCRS(Agent):
@@ -186,8 +197,9 @@ class MusicCRS(Agent):
         parse -> handler from HANDLERS -> reply text + a PLAYLIST act if the playlist changed
         + a MEDIA act if the reply shows options.
         """
-        # Start the clock: the time printed at the end covers the whole turn.
+        # Start the clock and the LLM-call count: both printed at the end cover the whole turn.
         start = time.perf_counter()
+        llm.call_count = 0
 
         # 1. Understand the message: slash commands by rules, other text by one LLM call.
         parsed = parse(utterance.text, self.state, self.services.llm)

@@ -373,6 +373,15 @@ def media_act(track_ids, db, catalog):
 
 **Done when:** both scripts print their tables; the numbers go into the README's Part 4 section.
 
+**T9 as built (Oct 31, branch `jp/p4-eval`):**
+
+- **Turn:** turn 8 of each session (7 songs played before it, so the played list is never empty).
+- **"Before" = songs 6–25 of `retrieve(ctx, 25)`, not the top 20.** The after list never contains the 5 shown songs, so comparing it with a list that starts with them would be unfair. Songs 6–25 are what the user would see next without a critique.
+- **Same code as the agent:** the loop "nearest tracks that pass every filter" moved out of `handle_critique` into `critique_ranking(query, filters, exclude_ids, vectors, db, count)`; the agent asks for 5, the evaluation for 20.
+- **Second variant:** "older" / "newer" and "more" / "less popular", each only when the gold is strictly below / above the median of the shown list (`make_filter`), all said in one step, so both thresholds come from the shown list.
+- **Result (1,000 val0 sessions):** 180 accepted (gold among the 5 shown), 820 evaluated. nDCG@20: 0.1429 before, 0.0455 like only (up 6.3 %, down 31.2 %), 0.0754 like + attributes (up 12.1 %, down 29.6 %). Moving in the audio space alone drops the words of the conversation that the retriever uses.
+- **LLM-call log:** `llm.call_count`, +1 per call sent in `ask_json` (a retry counts twice); `receive_utterance` sets it to 0 at the start of each turn; `print_turn_time` prints `[CRITIQUE] 412 ms, 1 LLM call`. `check_latency` adds 5 Part 4 turns (30 in total), fails a turn over 3 LLM calls, and prints median / 95th-percentile ms (nearest rank). Oct 31 run: median 595 ms, p95 1,233 ms, max 1,309 ms, 0.9 LLM calls per turn, max 2.
+
 ---
 
 ## 5. Latency and LLM budget

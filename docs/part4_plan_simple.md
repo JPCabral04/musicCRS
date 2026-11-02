@@ -112,6 +112,7 @@ Each task: **what** → **file** → **done when**. One week, so each task gets 
 
 - **JP — T9. F5a evaluation + log.** On 1,000 `val0` conversations, a simulated user critiques the list toward the real next track; report nDCG@20 before vs after and the share of turns where it moved up. Count LLM calls per turn and print latency median / 95th percentile.
 → `musiccrs/checks/eval_critique.py`, `musiccrs/llm.py`, `musiccrs/checks/check_latency.py` → done when both scripts print their tables, and the numbers go into the README.
+**Done Oct 31** (branch `jp/p4-eval`): on 820 val0 turns nDCG@20 0.143 (retriever, songs 6–25) → 0.046 after "more like #k" → 0.075 with true year / popularity critiques. "Before" is songs 6–25, not the top 20, see `part4_plan_detailed.md` §4.7.
 - **Alejandro — T10. F5b audio evaluation.** 1,000 random seed tracks: tags shared with the seed by the top-5 audio neighbours, vs 5 random tracks, vs the top-5 text-embedding neighbours.
 → `musiccrs/checks/eval_audio.py` → done when it prints the 3 numbers.
 - **Alejandro — T11.** Finish the demo script (`docs/part4_demo.md` grows after every task; JP writes the sections of Alejandro's tasks when merging them; T11 checks it end to end and orders it by rubric item) + "Part 4" README section.
