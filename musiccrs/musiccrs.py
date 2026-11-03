@@ -6,7 +6,6 @@ Run from the repo root as a module (so the package imports work):
 
 import json
 import time
-from dataclasses import asdict
 
 from dialoguekit.core.annotated_utterance import AnnotatedUtterance
 from dialoguekit.core.dialogue_act import DialogueAct
@@ -24,7 +23,8 @@ from .data.media import get_media, media_act
 from .data.vectors import TrackVectors
 from .handlers.critique import handle_critique
 from .handlers.explain import handle_explain
-from .handlers.playlist import handle_add, handle_clear, handle_help, handle_remove, handle_show
+from .handlers.playlist import (describe_track, handle_add, handle_clear, handle_help,
+                                handle_remove, handle_show)
 from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
@@ -159,9 +159,50 @@ def print_turn_time(intent_name, start):
           + calls_text(llm.call_count))
 
 
-def print_state(state):
-    """TEMP study aid: the DialogueState as indented JSON (the set `shown` as a sorted list)."""
-    print(json.dumps(asdict(state), indent=2, default=sorted))
+def track_names(track_ids, db):
+    """TEMP study aid: ["id-1", "id-2"] -> ["Bad Medicine by Bon Jovi", "Yellow by Coldplay"]."""
+    names = []
+    for track_id in track_ids:
+        names.append(describe_track(db.get(track_id)))
+    return names
+
+
+def indented_json(value):
+    """TEMP study aid: JSON with 2-space indent, its later lines pushed 2 more to the right."""
+    return json.dumps(value, indent=2).replace("\n", "\n  ")
+
+
+def print_state(state, db):
+    """TEMP study aid: all of DialogueState as valid JSON, track IDs shown as names.
+
+    One line per track in "signals" (why it was shown); "shown" (a set) sorted by name.
+    """
+    critique = None
+    if state.critique is not None:
+        critique = dict(state.critique)
+        critique["base_ids"] = track_names(state.critique["base_ids"], db)
+        critique["liked"] = track_names(state.critique["liked"], db)
+        critique["disliked"] = track_names(state.critique["disliked"], db)
+
+    signal_lines = []
+    for track_id in state.signals:
+        signal = dict(state.signals[track_id])
+        for key in ("base_ids", "liked", "disliked"):
+            if key in signal:
+                signal[key] = track_names(signal[key], db)
+        signal_lines.append("    " + json.dumps(track_names([track_id], db)[0])
+                            + ": " + json.dumps(signal))
+
+    pieces = [
+        '  "playlist": ' + indented_json(track_names(state.playlist, db)),
+        '  "pending_options": ' + indented_json(track_names(state.pending_options, db)),
+        '  "pending_kind": ' + json.dumps(state.pending_kind),
+        '  "last_shown": ' + indented_json(track_names(state.last_shown, db)),
+        '  "shown": ' + indented_json(sorted(track_names(state.shown, db))),
+        '  "signals": {\n' + ",\n".join(signal_lines) + "\n  }",
+        '  "critique": ' + indented_json(critique),
+    ]
+    print("{\n" + ",\n".join(pieces) + "\n}")
 
 
 class MusicCRS(Agent):
@@ -249,7 +290,7 @@ class MusicCRS(Agent):
                 dialogue_acts=dialogue_acts,
             )
         )
-        print_state(self.state)  # TEMP study aid: remove before committing
+        print_state(self.state, self.services.db)  # TEMP study aid: remove before committing
         print_turn_time(parsed.name, start)
 
 
