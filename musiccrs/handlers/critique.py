@@ -84,11 +84,16 @@ def critique_query(critique, vectors):
 
 
 def names_text(track_ids, db):
-    """Track names for the reply: one -> "<b>Numb</b> by Linkin Park", two or more joined by ", "."""
+    """Track names for the reply: one -> "<b>Numb by Linkin Park</b>", two -> "A and B", three -> "A; B and C".
+
+    Not joined by ", ": a title can hold a comma ("Mama, I'm Coming Home").
+    """
     names = []
     for track_id in track_ids:
         names.append("<b>" + describe_track(db.get(track_id)) + "</b>")
-    return ", ".join(names)
+    if len(names) == 1:
+        return names[0]
+    return "; ".join(names[:-1]) + " and " + names[-1]
 
 
 def critique_text(critique, db):
