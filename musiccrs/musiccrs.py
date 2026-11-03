@@ -243,6 +243,7 @@ class MusicCRS(Agent):
                 dialogue_acts=dialogue_acts,
             )
         )
+        print(self.state)  # TEMP study aid: remove before committing
         print_turn_time(parsed.name, start)
 
 
