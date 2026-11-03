@@ -6,6 +6,7 @@ Run from the repo root as a module (so the package imports work):
 
 import json
 import time
+from dataclasses import asdict
 
 from dialoguekit.core.annotated_utterance import AnnotatedUtterance
 from dialoguekit.core.dialogue_act import DialogueAct
@@ -23,8 +24,7 @@ from .data.media import get_media, media_act
 from .data.vectors import TrackVectors
 from .handlers.critique import handle_critique
 from .handlers.explain import handle_explain
-from .handlers.playlist import (describe_track, handle_add, handle_clear, handle_help,
-                                handle_remove, handle_show)
+from .handlers.playlist import handle_add, handle_clear, handle_help, handle_remove, handle_show
 from .handlers.qa import handle_ask_artist, handle_ask_track
 from .handlers.recs import handle_create_playlist, handle_recommend
 from .handlers.selection import handle_select
@@ -159,48 +159,9 @@ def print_turn_time(intent_name, start):
           + calls_text(llm.call_count))
 
 
-def track_label(track_id, db):
-    """TEMP study aid: "Bad Medicine by Bon Jovi" for an ID (describe_track)."""
-    return describe_track(db.get(track_id))
-
-
-def print_state(state, db):
-    """TEMP study aid: the DialogueState as a readable block in the backend terminal."""
-    line = "=" * 70
-    print("\n" + line)
-    print("DIALOGUE STATE")
-    print(line)
-
-    print("playlist (" + str(len(state.playlist)) + "):")
-    for track_id in state.playlist:
-        print("   - " + track_label(track_id, db))
-
-    print("last_shown = the list on screen (" + str(len(state.last_shown)) + "):")
-    number = 1
-    for track_id in state.last_shown:
-        print("   " + str(number) + ". " + track_label(track_id, db))
-        number = number + 1
-
-    print("shown = never shown again: " + str(len(state.shown)) + " tracks")
-    print("pending_kind: " + str(state.pending_kind))
-
-    if state.critique is None:
-        print("critique: None")
-    else:
-        print("critique:")
-        print("   base_ids: " + str(len(state.critique["base_ids"])) + " tracks")
-        liked = []
-        for track_id in state.critique["liked"]:
-            liked.append(track_label(track_id, db))
-        disliked = []
-        for track_id in state.critique["disliked"]:
-            disliked.append(track_label(track_id, db))
-        print("   liked:    " + str(liked))
-        print("   disliked: " + str(disliked))
-        print("   filters:")
-        for one_filter in state.critique["filters"]:
-            print("      " + str(one_filter))
-    print(line + "\n")
+def print_state(state):
+    """TEMP study aid: the DialogueState as indented JSON (the set `shown` as a sorted list)."""
+    print(json.dumps(asdict(state), indent=2, default=sorted))
 
 
 class MusicCRS(Agent):
@@ -288,7 +249,7 @@ class MusicCRS(Agent):
                 dialogue_acts=dialogue_acts,
             )
         )
-        print_state(self.state, self.services.db)  # TEMP study aid: remove before committing
+        print_state(self.state)  # TEMP study aid: remove before committing
         print_turn_time(parsed.name, start)
 
 
