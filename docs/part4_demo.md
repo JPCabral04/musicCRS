@@ -189,7 +189,7 @@ Reload, build the rock playlist (§2), then:
 | `/sounds nirvana: smells like teen spirit`, then `/why 1` | "why the first one?" | **Why I showed you I Stand Alone by Godsmack:** It sounds close to Smells Like Teen Spirit by Nirvana (audio similarity 0.93). It shares the tags *alternative*, *rock*, *grunge* with Smells Like Teen Spirit by Nirvana. |
 | `/about leaving home`, then `/why 1` | "why the first one?" | **Why I showed you Leaving Home by Jebediah:** Its lyrics are close to the theme 'leaving home' (lyrics similarity 0.55). |
 
-**In the code:** `handle_explain` ([explain.py:201](../musiccrs/handlers/explain.py#L201)) → `pick_shown` finds the song in `last_shown` → `explain_track` ([explain.py:169](../musiccrs/handlers/explain.py#L169)) reads `state.signals[track_id]` and builds the sentences: `found_sentence` (source), `retrievers_sentence` (ranks stored by R6, [recs.py:291-293](../musiccrs/handlers/recs.py#L291-L293)), `tags_sentence` and `artist_sentence` (checked in the database).
+**In the code:** `handle_explain` ([explain.py:213](../musiccrs/handlers/explain.py#L213)) → `pick_shown` finds the song in `last_shown` → `explain_track` ([explain.py:180](../musiccrs/handlers/explain.py#L180)) reads `state.signals[track_id]` and builds the sentences: `found_sentence` (source), `retrievers_sentence` (ranks stored by R6, [recs.py:291-293](../musiccrs/handlers/recs.py#L291-L293)), `tags_sentence` and `artist_sentence` (checked in the database).
 
 Check: `python -m musiccrs.checks.check_explain` (§4).
 
