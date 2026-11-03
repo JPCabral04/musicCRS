@@ -180,8 +180,8 @@ Reload, build the rock playlist (§2), then:
 
 | Slash command | Natural language | Reply |
 | --- | --- | --- |
-| `/recommend`, then `/why 2` | "why the second one?" | **Why I showed you Bad Medicine by Bon Jovi:** I recommended it for Smells Like Teen Spirit, Hotel California, It's My Life. It was found by matching the words of your songs (#116), being by an artist of your songs (#1). It shares the tags *hard rock*, *jon bon jovi*, *favorite* with those songs. Its artist Bon Jovi is already in your playlist. |
-| `/why come as you are` | "why did you pick Come As You Are?" | Same form, found by three retrievers: words (#10), same artist (#59), the listening patterns of other users (#2). |
+| `/recommend`, then `/why 2` | "why the second one?" | **Why I showed you Bad Medicine by Bon Jovi:** I recommended it for Smells Like Teen Spirit by Nirvana; Hotel California - 2013 Remaster by Eagles and It's My Life by Bon Jovi. It was found by matching the words of your songs (lower in its list), being by an artist of your songs (its top pick). It shares the tags *hard rock*, *jon bon jovi*, *favorite* with those songs. Its artist Bon Jovi is already in your playlist. |
+| `/why come as you are` | "why did you pick Come As You Are?" | Same form, found by three retrievers: words (in its top ten), same artist (lower in its list), the listening patterns of other users (in its top ten). |
 | `/like 2`, `/critique year less`, then `/why 1` | "why the first one?" | **Why I showed you Wild Is The Wind by Bon Jovi:** It came from your critique "More like Bad Medicine by Bon Jovi, older than 1996", as one of the songs closest in sound to it (audio similarity 0.91). It shares the tags *hard rock*, *melodic hard rock*, *jon bon jovi* with Bad Medicine. Its artist Bon Jovi is already in your playlist. |
 | `/select 2` | "add the second one" | Added Mama, I'm Coming Home by Ozzy Osbourne: the "why" did not clear the options. |
 | `/why 7` | "why the seventh one?" | I could not find '7' in the last list I showed you. Say a number from 1 to 5, or part of a title or an artist. |

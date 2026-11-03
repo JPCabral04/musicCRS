@@ -62,7 +62,7 @@ def explain(state, services, slots):
 def numbers_in(text):
     """The numbers of a reply, leaving out song names (<b>...</b>) and tags (<i>...</i>).
 
-    "Why <b>1979 by Smashing Pumpkins</b>: ... (#3) ... similarity 0.82" -> ["3", "0.82"]
+    "Why <b>1979 by Smashing Pumpkins</b>: ... older than 1996 ... similarity 0.82" -> ["1996", "0.82"]
     """
     text = re.sub(r"<b>.*?</b>", "", text)
     text = re.sub(r"<i>.*?</i>", "", text)
