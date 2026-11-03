@@ -88,7 +88,7 @@ reply (the reply stays within 3-5 s; they are looked up again next time).
 | Play one preview, then another | The first one stops (one preview at a time in the panel). |
 | `/recommend` | The 5 songs as buttons, and below the text a card per song (cover, name, artist, player). |
 
-**In the code:** `get_media` ([media.py:49](../musiccrs/data/media.py#L49)) asks `search_deezer` once per track and caches the answer; `media_act` ([media.py:78](../musiccrs/data/media.py#L78)) is added by `receive_utterance` when the reply has `OPTIONS` (step 6 in §2).
+**In the code:** `get_media` ([media.py:62](../musiccrs/data/media.py#L62)) asks `search_deezer` once per track and caches the answer for 10 minutes (Deezer preview links expire after about 15); `media_act` ([media.py:92](../musiccrs/data/media.py#L92)) is added by `receive_utterance` when the reply has `OPTIONS` (step 6 in §2).
 
 ### Sounds like (T6, F2.1): "songs that sound like Smells Like Teen Spirit"
 

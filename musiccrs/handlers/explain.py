@@ -90,11 +90,22 @@ def found_sentence(signals, db):
     return None
 
 
-def retrievers_sentence(signals):
-    """Which Part 1 retrievers ranked it, and where (R6 only), or None.
+def rank_text(rank):
+    """A stored rank in words, as a user reads it: 1 -> "its top pick", 3 -> "in its top ten",
+    116 -> "lower in its list". A bare "#116" means nothing to the user.
+    """
+    if rank == 1:
+        return "its top pick"
+    if rank <= 10:
+        return "in its top ten"
+    return "lower in its list"
 
-    {"bm25_plus": 3, "bpr_sim": 12} -> "It was found by matching the words of your songs (#3),
-                                        the listening patterns of other users (#12)."
+
+def retrievers_sentence(signals):
+    """Which Part 1 retrievers ranked it, and how high (R6 only), or None.
+
+    {"bm25_plus": 3, "bpr_sim": 12} -> "It was found by matching the words of your songs (in its
+                                        top ten), the listening patterns of other users (lower in its list)."
     """
     if "retrievers" not in signals:
         return None
@@ -103,7 +114,7 @@ def retrievers_sentence(signals):
     parts = []
     for name in RETRIEVER_WORDS:
         if name in ranks:
-            parts.append(RETRIEVER_WORDS[name] + " (#" + str(ranks[name]) + ")")
+            parts.append(RETRIEVER_WORDS[name] + " (" + rank_text(ranks[name]) + ")")
     if len(parts) == 0:
         return None
     return "It was found by " + ", ".join(parts) + "."
@@ -171,7 +182,8 @@ def explain_track(track_id, state, db):
 
     Bad Medicine (Bon Jovi), recommended for a rock playlist ->
         ["I recommended it for <b>Smells Like Teen Spirit by Nirvana</b>, ...",
-         "It was found by matching the words of your songs (#116), being by an artist of your songs (#1).",
+         "It was found by matching the words of your songs (lower in its list),
+          being by an artist of your songs (its top pick).",
          "It shares the tags <i>hard rock</i>, <i>jon bon jovi</i>, <i>favorite</i> with those songs.",
          "Its artist Bon Jovi is already in your playlist."]
     """

@@ -180,8 +180,8 @@ Reload, build the rock playlist (§2), then:
 
 | Slash command | Natural language | Reply |
 | --- | --- | --- |
-| `/recommend`, then `/why 2` | "why the second one?" | **Why I showed you Bad Medicine by Bon Jovi:** I recommended it for Smells Like Teen Spirit, Hotel California, It's My Life. It was found by matching the words of your songs (#116), being by an artist of your songs (#1). It shares the tags *hard rock*, *jon bon jovi*, *favorite* with those songs. Its artist Bon Jovi is already in your playlist. |
-| `/why come as you are` | "why did you pick Come As You Are?" | Same form, found by three retrievers: words (#10), same artist (#59), the listening patterns of other users (#2). |
+| `/recommend`, then `/why 2` | "why the second one?" | **Why I showed you Bad Medicine by Bon Jovi:** I recommended it for Smells Like Teen Spirit by Nirvana; Hotel California - 2013 Remaster by Eagles and It's My Life by Bon Jovi. It was found by matching the words of your songs (lower in its list), being by an artist of your songs (its top pick). It shares the tags *hard rock*, *jon bon jovi*, *favorite* with those songs. Its artist Bon Jovi is already in your playlist. |
+| `/why come as you are` | "why did you pick Come As You Are?" | Same form, found by three retrievers: words (in its top ten), same artist (lower in its list), the listening patterns of other users (in its top ten). |
 | `/like 2`, `/critique year less`, then `/why 1` | "why the first one?" | **Why I showed you Wild Is The Wind by Bon Jovi:** It came from your critique "More like Bad Medicine by Bon Jovi, older than 1996", as one of the songs closest in sound to it (audio similarity 0.91). It shares the tags *hard rock*, *melodic hard rock*, *jon bon jovi* with Bad Medicine. Its artist Bon Jovi is already in your playlist. |
 | `/select 2` | "add the second one" | Added Mama, I'm Coming Home by Ozzy Osbourne: the "why" did not clear the options. |
 | `/why 7` | "why the seventh one?" | I could not find '7' in the last list I showed you. Say a number from 1 to 5, or part of a title or an artist. |
@@ -189,7 +189,7 @@ Reload, build the rock playlist (§2), then:
 | `/sounds nirvana: smells like teen spirit`, then `/why 1` | "why the first one?" | **Why I showed you I Stand Alone by Godsmack:** It sounds close to Smells Like Teen Spirit by Nirvana (audio similarity 0.93). It shares the tags *alternative*, *rock*, *grunge* with Smells Like Teen Spirit by Nirvana. |
 | `/about leaving home`, then `/why 1` | "why the first one?" | **Why I showed you Leaving Home by Jebediah:** Its lyrics are close to the theme 'leaving home' (lyrics similarity 0.55). |
 
-**In the code:** `handle_explain` ([explain.py:201](../musiccrs/handlers/explain.py#L201)) → `pick_shown` finds the song in `last_shown` → `explain_track` ([explain.py:169](../musiccrs/handlers/explain.py#L169)) reads `state.signals[track_id]` and builds the sentences: `found_sentence` (source), `retrievers_sentence` (ranks stored by R6, [recs.py:291-293](../musiccrs/handlers/recs.py#L291-L293)), `tags_sentence` and `artist_sentence` (checked in the database).
+**In the code:** `handle_explain` ([explain.py:213](../musiccrs/handlers/explain.py#L213)) → `pick_shown` finds the song in `last_shown` → `explain_track` ([explain.py:180](../musiccrs/handlers/explain.py#L180)) reads `state.signals[track_id]` and builds the sentences: `found_sentence` (source), `retrievers_sentence` (ranks stored by R6, [recs.py:291-293](../musiccrs/handlers/recs.py#L291-L293)), `tags_sentence` and `artist_sentence` (checked in the database).
 
 Check: `python -m musiccrs.checks.check_explain` (§4).
 
